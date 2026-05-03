@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
 
   const result = createControlSchema.safeParse(body)
   if (!result.success) {
-    return ApiErrors.badRequest(result.error.errors[0].message)
+    return ApiErrors.badRequest(result.error.issues[0].message)
   }
 
   const [control] = await db.insert(controls).values(result.data).returning()

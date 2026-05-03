@@ -26,7 +26,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
   async upload(buffer: Buffer, key: string, mimeType: string, _orgId: string): Promise<UploadResult> {
     const containerClient = this.getContainerClient()
     // Ensure container exists
-    await containerClient.createIfNotExists({ access: 'private' })
+    await containerClient.createIfNotExists()
 
     const blobClient = containerClient.getBlockBlobClient(key)
     await blobClient.uploadData(buffer, {
@@ -94,7 +94,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
   async testConnection(): Promise<{ ok: boolean; message: string }> {
     try {
       const containerClient = this.getContainerClient()
-      await containerClient.createIfNotExists({ access: 'private' })
+      await containerClient.createIfNotExists()
       const testKey = `_test/connection-test-${Date.now()}.txt`
       const blobClient = containerClient.getBlockBlobClient(testKey)
       await blobClient.uploadData(Buffer.from('test'), {

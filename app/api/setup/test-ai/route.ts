@@ -17,7 +17,6 @@ export async function POST(req: NextRequest) {
       const { text } = await generateText({
         model: openai(model || 'gpt-4o-mini'),
         prompt: 'Reply with exactly: OK',
-        maxTokens: 10,
       })
       return NextResponse.json({ ok: true, message: `OpenAI response: "${text.trim()}" — connection successful` })
     } else if (aiProvider === 'gemini') {
@@ -27,7 +26,6 @@ export async function POST(req: NextRequest) {
       const { text } = await generateText({
         model: google(model || 'gemini-2.0-flash'),
         prompt: 'Reply with exactly: OK',
-        maxTokens: 10,
       })
       return NextResponse.json({ ok: true, message: `Gemini response: "${text.trim()}" — connection successful` })
     }

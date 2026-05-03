@@ -83,7 +83,7 @@ export async function POST(req: NextRequest) {
 
   const result = createEvidenceSchema.safeParse(body)
   if (!result.success) {
-    return ApiErrors.badRequest(result.error.errors[0].message)
+    return ApiErrors.badRequest(result.error.issues[0].message)
   }
 
   const [record] = await db.insert(evidence).values({

@@ -20,6 +20,14 @@ export const frameworks = pgTable('frameworks', {
   description: text('description'),
   category: varchar('category', { length: 100 }),
   regulatoryBody: varchar('regulatory_body', { length: 255 }),
+  slug: varchar('slug', { length: 100 }).unique(),
+  // Extended metadata for controls mapping engine
+  authority: varchar('authority', { length: 255 }),
+  website: varchar('website', { length: 500 }),
+  logoUrl: text('logo_url'),
+  // Built-in frameworks store their controls as jsonb for fast lookup before
+  // full DB ingestion. User-uploaded frameworks populate the controls table instead.
+  controls: jsonb('controls'),
   isBuiltIn: boolean('is_built_in').default(false),
   isActive: boolean('is_active').default(true),
   metadata: jsonb('metadata'),

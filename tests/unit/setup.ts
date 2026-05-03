@@ -6,7 +6,8 @@
 import { vi, beforeAll, afterAll } from "vitest"
 
 // ── Environment ───────────────────────────────────────────
-process.env.NODE_ENV = "test"
+// NODE_ENV is read-only in strict TS — use Object.assign to override in tests
+Object.assign(process.env, { NODE_ENV: "test" })
 process.env.JWT_SECRET = "test_jwt_secret_32_chars_minimum_here"
 process.env.DATABASE_URL = "postgresql://compliguard:test@localhost:5432/compliguard_test"
 process.env.STORAGE_PROVIDER = "local"

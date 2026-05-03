@@ -108,7 +108,7 @@ async function seedFrameworks(frameworkData: FrameworkJson[]): Promise<void> {
           logoUrl: fw.logo_url,
           isActive: fw.is_active,
           controls: fw.controls,
-          isBuiltin: true,
+          isBuiltIn: true,
         })
         log(`  ✓ Inserted: ${fw.name} (${fw.controls.length} controls)`)
       }
@@ -122,157 +122,32 @@ async function seedFrameworks(frameworkData: FrameworkJson[]): Promise<void> {
 async function seedSystemSettings(): Promise<void> {
   log("Seeding system settings defaults...")
 
-  const defaultSettings = [
-    {
-      key: "app.setup_complete",
-      value: "false",
-      type: "boolean" as const,
-      group: "setup",
-      label: "Setup Complete",
-      description: "Whether the initial setup wizard has been completed",
-      isPublic: false,
-      isEditable: false,
-    },
-    {
-      key: "app.setup_step",
-      value: "0",
-      type: "number" as const,
-      group: "setup",
-      label: "Setup Step",
-      description: "Current step of the setup wizard (0 = not started, 9 = complete)",
-      isPublic: false,
-      isEditable: false,
-    },
-    {
-      key: "app.name",
-      value: "CompliGuard",
-      type: "string" as const,
-      group: "general",
-      label: "Application Name",
-      description: "Display name for this CompliGuard installation",
-      isPublic: true,
-      isEditable: true,
-    },
-    {
-      key: "app.tagline",
-      value: "AI-powered GRC Compliance Platform",
-      type: "string" as const,
-      group: "general",
-      label: "Application Tagline",
-      description: "Short tagline displayed on login and public pages",
-      isPublic: true,
-      isEditable: true,
-    },
-    {
-      key: "security.session_timeout_minutes",
-      value: "480",
-      type: "number" as const,
-      group: "security",
-      label: "Session Timeout (minutes)",
-      description: "How long before an inactive session expires (default: 8 hours)",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "security.max_login_attempts",
-      value: "5",
-      type: "number" as const,
-      group: "security",
-      label: "Max Login Attempts",
-      description: "Number of failed login attempts before account lockout",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "security.lockout_duration_minutes",
-      value: "15",
-      type: "number" as const,
-      group: "security",
-      label: "Lockout Duration (minutes)",
-      description: "How long an account is locked after too many failed attempts",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "security.require_mfa",
-      value: "false",
-      type: "boolean" as const,
-      group: "security",
-      label: "Require MFA",
-      description: "Whether to require multi-factor authentication for all users",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "registration.allow_public",
-      value: "false",
-      type: "boolean" as const,
-      group: "registration",
-      label: "Allow Public Registration",
-      description: "Whether new users can register without an invitation",
-      isPublic: true,
-      isEditable: true,
-    },
-    {
-      key: "registration.require_email_verification",
-      value: "true",
-      type: "boolean" as const,
-      group: "registration",
-      label: "Require Email Verification",
-      description: "Whether new accounts must verify their email address",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "ai.provider",
-      value: "openai",
-      type: "string" as const,
-      group: "ai",
-      label: "AI Provider",
-      description: "Primary AI provider for risk scoring and evidence analysis (openai | azure-openai | none)",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "ai.enabled",
-      value: "false",
-      type: "boolean" as const,
-      group: "ai",
-      label: "AI Features Enabled",
-      description: "Master toggle for all AI-powered features",
-      isPublic: false,
-      isEditable: true,
-    },
-    {
-      key: "notifications.default_channels",
-      value: JSON.stringify(["email"]),
-      type: "json" as const,
-      group: "notifications",
-      label: "Default Notification Channels",
-      description: "Default channels for system notifications (email, teams, slack, webhook)",
-      isPublic: false,
-      isEditable: true,
-    },
-  ]
+  try {
+    // system_settings is a single-row config table (not key-value)
+    const existing = await db
+      .select({ id: systemSettings.id })
+      .from(systemSettings)
+      .limit(1)
 
-  for (const setting of defaultSettings) {
-    try {
-      const existing = await db
-        .select({ id: systemSettings.id })
-        .from(systemSettings)
-        .where(eq(systemSettings.key, setting.key))
-        .limit(1)
-
-      if (existing.length === 0) {
-        await db.insert(systemSettings).values(setting)
-        log(`  ✓ Setting: ${setting.key}`)
-      } else {
-        log(`  - Skipped (exists): ${setting.key}`)
-      }
-    } catch (err) {
-      console.error(`  ✗ Failed to seed setting '${setting.key}':`, err)
-      // Non-fatal — continue
+    if (existing.length === 0) {
+      await db.insert(systemSettings).values({
+        setupCompleted: false,
+        setupStep: 0,
+        platformName: "CompliGuard",
+        deploymentType: "docker",
+        storageProvider: "local",
+        aiProvider: "openai",
+        allowRegistrations: false,
+        maintenanceMode: false,
+        version: "2.0.0",
+      })
+      log("  ✓ System settings row inserted")
+    } else {
+      log("  - System settings row already exists, skipped")
     }
+  } catch (err) {
+    console.error("  ✗ Failed to seed system settings:", err)
+    // Non-fatal — continue
   }
 }
 

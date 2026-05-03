@@ -1,12 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Loader2, Github } from 'lucide-react'
+import { Loader2, GitBranch } from 'lucide-react'
 
 const signInSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -15,7 +15,7 @@ const signInSchema = z.object({
 
 type SignInFormData = z.infer<typeof signInSchema>
 
-export default function SignInPage() {
+function SignInForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
@@ -130,7 +130,7 @@ export default function SignInPage() {
           href="/api/auth/oauth/github"
           className="flex items-center justify-center gap-2 border border-slate-300 dark:border-slate-600 rounded-md py-2 px-4 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
         >
-          <Github className="w-4 h-4" />
+          <GitBranch className="w-4 h-4" />
           GitHub
         </a>
       </div>
@@ -142,5 +142,17 @@ export default function SignInPage() {
         </Link>
       </p>
     </>
+  )
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+      </div>
+    }>
+      <SignInForm />
+    </Suspense>
   )
 }

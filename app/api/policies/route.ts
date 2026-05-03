@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   try { body = await req.json() } catch { return ApiErrors.badRequest('Invalid JSON') }
 
   const result = policySchema.safeParse(body)
-  if (!result.success) return ApiErrors.badRequest(result.error.errors[0].message)
+  if (!result.success) return ApiErrors.badRequest(result.error.issues[0].message)
 
   const data = result.data
   const [policy] = await db.insert(policies).values({
