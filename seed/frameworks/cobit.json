@@ -1,0 +1,31 @@
+{
+  "id": "cobit",
+  "name": "COBIT 2019",
+  "slug": "cobit",
+  "version": "2019",
+  "description": "Control Objectives for Information and Related Technologies — framework for governance and management of enterprise IT. Provides a comprehensive guide for IT governance.",
+  "authority": "ISACA",
+  "category": "governance",
+  "website": "https://www.isaca.org/resources/cobit",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "EDM01", "title": "Ensured Governance Framework Setting and Maintenance", "description": "Analyze and articulate the requirements for the governance of enterprise IT and put in place and maintain effective enabling structures, principles, processes and practices.", "category": "Evaluate, Direct and Monitor (EDM)", "weight": 2 },
+    { "ref": "EDM02", "title": "Ensured Benefits Delivery", "description": "Secure optimal value from IT-enabled initiatives, services and assets; cost-efficient delivery of solutions and services; and a reliable, accurate picture of costs and likely benefits.", "category": "Evaluate, Direct and Monitor (EDM)", "weight": 2 },
+    { "ref": "EDM03", "title": "Ensured Risk Optimization", "description": "Ensure that IT-related enterprise risk does not exceed risk appetite and risk tolerance, the impact of IT risk to enterprise value is identified and managed.", "category": "Evaluate, Direct and Monitor (EDM)", "weight": 2 },
+    { "ref": "APO01", "title": "Managed I&T Management Framework", "description": "Clarify and maintain the mission and vision of the management of enterprise I&T in line with guiding principles; implement and maintain the mechanisms and authority required.", "category": "Align, Plan and Organise (APO)", "weight": 1 },
+    { "ref": "APO02", "title": "Managed Strategy", "description": "Provide a holistic view of the current business and IT environment, the future direction, and the initiatives required to migrate to the desired future environment.", "category": "Align, Plan and Organise (APO)", "weight": 2 },
+    { "ref": "APO12", "title": "Managed Risk", "description": "Continually identify, assess, and reduce IT-related risk within levels of tolerance set by enterprise executive management.", "category": "Align, Plan and Organise (APO)", "weight": 2 },
+    { "ref": "APO13", "title": "Managed Security", "description": "Define, operate, and monitor a system for information security management.", "category": "Align, Plan and Organise (APO)", "weight": 2 },
+    { "ref": "BAI01", "title": "Managed Programs", "description": "Manage all programs from the investment portfolio in alignment with enterprise strategy and in a co-ordinated way.", "category": "Build, Acquire and Implement (BAI)", "weight": 1 },
+    { "ref": "BAI03", "title": "Managed Solutions Identification and Build", "description": "Establish and maintain identified solutions in line with enterprise requirements covering design, development/acquisition, testing, configuration management.", "category": "Build, Acquire and Implement (BAI)", "weight": 2 },
+    { "ref": "BAI06", "title": "Managed IT Changes", "description": "Manage all changes in a controlled manner, including standard changes and emergency maintenance relating to business processes, applications and infrastructure.", "category": "Build, Acquire and Implement (BAI)", "weight": 2 },
+    { "ref": "DSS01", "title": "Managed Operations", "description": "Coordinate and execute the activities and operational procedures required to deliver internal and outsourced IT services.", "category": "Deliver, Service and Support (DSS)", "weight": 2 },
+    { "ref": "DSS02", "title": "Managed Service Requests and Incidents", "description": "Provide timely and effective response to user requests and resolution of all types of incidents; restore normal service; record and fulfill user requests.", "category": "Deliver, Service and Support (DSS)", "weight": 2 },
+    { "ref": "DSS04", "title": "Managed Continuity", "description": "Maintain a complete, current and tested plan for business continuity in the event of a business disruption or major disaster.", "category": "Deliver, Service and Support (DSS)", "weight": 2 },
+    { "ref": "DSS05", "title": "Managed Security Services", "description": "Protect enterprise information to maintain the level of information security risk acceptable to the enterprise in accordance with the security policy.", "category": "Deliver, Service and Support (DSS)", "weight": 3 },
+    { "ref": "MEA01", "title": "Managed Performance and Conformance Monitoring", "description": "Collect, validate and evaluate business, IT and process goals and metrics; monitor that processes are performing against agreed performance and conformance goals.", "category": "Monitor, Evaluate and Assess (MEA)", "weight": 1 },
+    { "ref": "MEA02", "title": "Managed System of Internal Control", "description": "Continuously monitor and evaluate the control environment, including self-assessments and independent assurance reviews.", "category": "Monitor, Evaluate and Assess (MEA)", "weight": 2 },
+    { "ref": "MEA03", "title": "Managed Compliance With External Requirements", "description": "Evaluate that IT and business processes are compliant with laws, regulations and contractual requirements. Obtain assurance that requirements have been identified and complied with.", "category": "Monitor, Evaluate and Assess (MEA)", "weight": 2 }
+  ]
+}

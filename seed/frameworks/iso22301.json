@@ -1,0 +1,25 @@
+{
+  "id": "iso22301",
+  "name": "ISO 22301:2019",
+  "slug": "iso22301",
+  "version": "2019",
+  "description": "Business Continuity Management Systems — Requirements. Specifies requirements to plan, establish, implement, operate, monitor, review, maintain, and continually improve a documented management system to protect against, reduce the likelihood of, and ensure recovery from disruptions.",
+  "authority": "ISO",
+  "category": "resilience",
+  "website": "https://www.iso.org/standard/75106.html",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "4.1", "title": "Understanding the organization and its context", "description": "The organization shall determine external and internal issues that are relevant to its purpose and that affect its ability to achieve the intended outcomes of its BCMS.", "category": "Context of the Organization", "weight": 1 },
+    { "ref": "5.1", "title": "Leadership and commitment", "description": "Top management shall demonstrate leadership and commitment with respect to the business continuity management system.", "category": "Leadership", "weight": 1 },
+    { "ref": "6.1", "title": "Actions to address risks and opportunities", "description": "When planning for the BCMS, the organization shall consider the issues referred to in 4.1 and determine the risks and opportunities that need to be addressed.", "category": "Planning", "weight": 2 },
+    { "ref": "8.2", "title": "Business impact analysis and risk assessment", "description": "The organization shall establish, implement, and maintain a formal and documented process for business impact analysis and risk assessment.", "category": "Operations", "weight": 3 },
+    { "ref": "8.3", "title": "Business continuity strategy", "description": "The organization shall determine an appropriate business continuity strategy to protect prioritized activities and their dependencies, based on outputs from the BIA and risk assessment.", "category": "Operations", "weight": 3 },
+    { "ref": "8.4", "title": "Business continuity plans and procedures", "description": "The organization shall document procedures to recover its activities, continue operation of prioritized activities at a pre-defined level, restore business operations to normal conditions.", "category": "Operations", "weight": 3 },
+    { "ref": "8.5", "title": "Exercise programme", "description": "The organization shall ensure that its BCPs are exercised and tested at planned intervals to ensure that they are consistent with BC objectives.", "category": "Operations", "weight": 2 },
+    { "ref": "8.6", "title": "Evaluation and revision of business continuity procedures", "description": "The organization shall evaluate business continuity documentation during and after exercises, actual disruptions, and at planned intervals.", "category": "Operations", "weight": 2 },
+    { "ref": "9.1", "title": "Monitoring, measurement, analysis and evaluation", "description": "The organization shall evaluate the business continuity management system performance and the effectiveness of the BCMS.", "category": "Performance Evaluation", "weight": 2 },
+    { "ref": "9.2", "title": "Internal audit", "description": "The organization shall conduct internal audits at planned intervals to provide information on whether the BCMS conforms to requirements.", "category": "Performance Evaluation", "weight": 1 },
+    { "ref": "10.1", "title": "Nonconformity and corrective action", "description": "When a nonconformity occurs, the organization shall react to the nonconformity, evaluate the need for action, and implement corrective actions.", "category": "Improvement", "weight": 2 }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "id": "ccpa",
+  "name": "CCPA / CPRA",
+  "slug": "ccpa",
+  "version": "2023",
+  "description": "California Consumer Privacy Act and California Privacy Rights Act — California state privacy law giving consumers rights over their personal information and imposing obligations on businesses.",
+  "authority": "California Attorney General / CPPA",
+  "category": "privacy",
+  "website": "https://oag.ca.gov/privacy/ccpa",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "CCPA-1", "title": "Right to Know", "description": "Consumers have the right to know what personal information is collected, used, shared, or sold. Businesses must provide notice at or before the point of collection.", "category": "Consumer Rights", "weight": 2 },
+    { "ref": "CCPA-2", "title": "Right to Delete", "description": "Consumers have the right to request deletion of their personal information collected by the business, subject to exceptions.", "category": "Consumer Rights", "weight": 2 },
+    { "ref": "CCPA-3", "title": "Right to Opt-Out of Sale", "description": "Consumers have the right to opt-out of the sale of their personal information. Businesses must provide a 'Do Not Sell My Personal Information' link.", "category": "Consumer Rights", "weight": 2 },
+    { "ref": "CCPA-4", "title": "Right to Non-Discrimination", "description": "Businesses cannot discriminate against consumers who exercise their CCPA rights, including denying goods or services, charging different prices, or providing different quality.", "category": "Consumer Rights", "weight": 1 },
+    { "ref": "CPRA-5", "title": "Right to Correct", "description": "Consumers have the right to request correction of inaccurate personal information maintained by the business.", "category": "Consumer Rights (CPRA)", "weight": 1 },
+    { "ref": "CPRA-6", "title": "Right to Limit Use of Sensitive Personal Information", "description": "Consumers have the right to limit the use and disclosure of sensitive personal information to certain purposes.", "category": "Consumer Rights (CPRA)", "weight": 2 },
+    { "ref": "CPRA-7", "title": "Sensitive Personal Information", "description": "Businesses must provide notice and obtain opt-in consent for processing sensitive personal information beyond defined permitted purposes.", "category": "Sensitive Data", "weight": 2 },
+    { "ref": "CCPA-8", "title": "Privacy Notice Requirements", "description": "Businesses must provide a comprehensive privacy notice that discloses categories of personal information collected, purposes of collection, categories of third parties data is shared with.", "category": "Transparency", "weight": 2 },
+    { "ref": "CCPA-9", "title": "Service Provider Contracts", "description": "Businesses must have contracts with service providers that prohibit the service provider from retaining, using, or disclosing personal information outside the business relationship.", "category": "Vendor Management", "weight": 2 },
+    { "ref": "CCPA-10", "title": "Verification of Requests", "description": "Businesses must implement a verifiable consumer request process that allows consumers to exercise their rights without creating excessive friction.", "category": "Operational Requirements", "weight": 1 },
+    { "ref": "CCPA-11", "title": "Response Timeframes", "description": "Businesses must respond to consumer requests within 45 days (extendable by 45 more days). Businesses must disclose if they cannot fulfill the request.", "category": "Operational Requirements", "weight": 1 },
+    { "ref": "CPRA-12", "title": "Risk Assessments", "description": "Businesses must conduct and document risk assessments for processing activities that present significant risk to consumers' privacy.", "category": "Risk Management (CPRA)", "weight": 2 },
+    { "ref": "CPRA-13", "title": "Automated Decision-Making Technology", "description": "Consumers have the right to opt-out of automated decision-making technology that produces legal or similarly significant decisions.", "category": "Consumer Rights (CPRA)", "weight": 1 },
+    { "ref": "CCPA-14", "title": "Data Security", "description": "Businesses must implement reasonable security measures to protect personal information from unauthorized access, disclosure, or destruction.", "category": "Security", "weight": 3 }
+  ]
+}

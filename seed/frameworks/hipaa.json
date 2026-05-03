@@ -1,0 +1,32 @@
+{
+  "id": "hipaa",
+  "name": "HIPAA Security Rule",
+  "slug": "hipaa",
+  "version": "2013",
+  "description": "Health Insurance Portability and Accountability Act — Security Rule for protecting electronic protected health information (ePHI). Applies to covered entities and business associates.",
+  "authority": "HHS",
+  "category": "healthcare",
+  "website": "https://www.hhs.gov/hipaa/for-professionals/security/index.html",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "164.308(a)(1)", "title": "Security Management Process", "description": "Implement policies and procedures to prevent, detect, contain, and correct security violations. Includes risk analysis, risk management, sanction policy, and information system activity review.", "category": "Administrative Safeguards", "weight": 3 },
+    { "ref": "164.308(a)(2)", "title": "Assigned Security Responsibility", "description": "Identify the security official responsible for the development and implementation of the policies and procedures required.", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(3)", "title": "Workforce Security", "description": "Implement policies and procedures to ensure that all members of its workforce have appropriate access and to prevent those who do not have access from obtaining access.", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(4)", "title": "Information Access Management", "description": "Implement policies and procedures for authorizing access to ePHI that are consistent with the applicable requirements of subpart E (Privacy).", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(5)", "title": "Security Awareness and Training", "description": "Implement a security awareness and training program for all members of its workforce (including management).", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(6)", "title": "Security Incident Procedures", "description": "Implement policies and procedures to address security incidents including identifying and responding to suspected or known security incidents.", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(7)", "title": "Contingency Plan", "description": "Establish and implement, as needed, policies and procedures for responding to an emergency or other occurrence that damages systems containing ePHI.", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.308(a)(8)", "title": "Evaluation", "description": "Perform a periodic technical and non-technical evaluation that establishes the extent to which an entity's security policies and procedures meet the requirements.", "category": "Administrative Safeguards", "weight": 1 },
+    { "ref": "164.308(b)(1)", "title": "Business Associate Contracts", "description": "A covered entity may permit a business associate to create, receive, maintain, or transmit ePHI on its behalf only if the covered entity obtains satisfactory assurances.", "category": "Administrative Safeguards", "weight": 2 },
+    { "ref": "164.310(a)(1)", "title": "Facility Access Controls", "description": "Implement policies and procedures to limit physical access to its electronic information systems and the facility or facilities in which they are housed.", "category": "Physical Safeguards", "weight": 2 },
+    { "ref": "164.310(b)", "title": "Workstation Use", "description": "Implement policies and procedures that specify the proper functions to be performed, the manner in which those functions are to be performed, and the physical attributes of the surroundings of a specific workstation.", "category": "Physical Safeguards", "weight": 1 },
+    { "ref": "164.310(c)", "title": "Workstation Security", "description": "Implement physical safeguards for all workstations that access ePHI, to restrict access to authorized users.", "category": "Physical Safeguards", "weight": 1 },
+    { "ref": "164.310(d)(1)", "title": "Device and Media Controls", "description": "Implement policies and procedures that govern the receipt and removal of hardware and electronic media that contain ePHI into and out of a facility.", "category": "Physical Safeguards", "weight": 2 },
+    { "ref": "164.312(a)(1)", "title": "Access Control", "description": "Implement technical policies and procedures for electronic information systems that maintain ePHI to allow access only to those persons or software programs that have been granted access rights.", "category": "Technical Safeguards", "weight": 3 },
+    { "ref": "164.312(b)", "title": "Audit Controls", "description": "Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use ePHI.", "category": "Technical Safeguards", "weight": 2 },
+    { "ref": "164.312(c)(1)", "title": "Integrity Controls", "description": "Implement policies and procedures to protect ePHI from improper alteration or destruction.", "category": "Technical Safeguards", "weight": 2 },
+    { "ref": "164.312(d)", "title": "Person or Entity Authentication", "description": "Implement procedures to verify that a person or entity seeking access to ePHI is the one claimed.", "category": "Technical Safeguards", "weight": 2 },
+    { "ref": "164.312(e)(1)", "title": "Transmission Security", "description": "Implement technical security measures to guard against unauthorized access to ePHI that is being transmitted over an electronic communications network.", "category": "Technical Safeguards", "weight": 3 }
+  ]
+}

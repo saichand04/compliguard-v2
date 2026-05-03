@@ -1,0 +1,25 @@
+{
+  "id": "nerc_cip",
+  "name": "NERC CIP v7",
+  "slug": "nerc-cip",
+  "version": "7",
+  "description": "NERC Critical Infrastructure Protection — mandatory cybersecurity standards for the North American bulk electric system. Applies to utilities, grid operators, and energy companies.",
+  "authority": "NERC",
+  "category": "critical_infrastructure",
+  "website": "https://www.nerc.com/pa/Stand/Pages/CIPStandards.aspx",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "CIP-002", "title": "BES Cyber System Categorization", "description": "Identify and categorize BES Cyber Systems and their associated BES Cyber Assets for the purpose of applying cybersecurity requirements commensurate with the adverse impact of a BES Cyber System.", "category": "Critical Infrastructure Identification", "weight": 3 },
+    { "ref": "CIP-003", "title": "Security Management Controls", "description": "Specify consistent and sustainable security management controls that establish responsibility and accountability to protect BES Cyber Systems against compromise that could lead to misoperation or instability in the BES.", "category": "Management Controls", "weight": 2 },
+    { "ref": "CIP-004", "title": "Personnel and Training", "description": "Minimize the risk against compromise that could lead to misoperation or instability in the BES from individuals accessing BES Cyber Systems by requiring an appropriate level of personnel risk assessment, training, and security awareness.", "category": "Personnel", "weight": 2 },
+    { "ref": "CIP-005", "title": "Electronic Security Perimeter(s)", "description": "Manage electronic access to BES Cyber Systems by specifying a controlled Electronic Security Perimeter in support of protecting BES Cyber Systems against compromise that could lead to misoperation.", "category": "Electronic Security", "weight": 3 },
+    { "ref": "CIP-006", "title": "Physical Security of BES Cyber Systems", "description": "Manage physical access to BES Cyber Systems by specifying a physical security plan in support of protecting BES Cyber Systems against compromise.", "category": "Physical Security", "weight": 2 },
+    { "ref": "CIP-007", "title": "Systems Security Management", "description": "Manage system security by specifying select technical, operational, and procedural requirements in support of protecting BES Cyber Systems against compromise.", "category": "Systems Security", "weight": 3 },
+    { "ref": "CIP-008", "title": "Incident Reporting and Response Planning", "description": "Mitigate the risk to the reliable operation of the BES as the result of a Cybersecurity Incident by specifying incident response requirements.", "category": "Incident Response", "weight": 2 },
+    { "ref": "CIP-009", "title": "Recovery Plans for BES Cyber Systems", "description": "Recovery plan specifications for BES Cyber Systems to support the continued reliability of the BES.", "category": "Recovery", "weight": 2 },
+    { "ref": "CIP-010", "title": "Configuration Change Management and Vulnerability Assessments", "description": "Prevent and detect unauthorized changes to BES Cyber Systems by specifying configuration change management and vulnerability assessment requirements.", "category": "Configuration Management", "weight": 2 },
+    { "ref": "CIP-011", "title": "Information Protection", "description": "Prevent unauthorized access to BES Cyber System Information by specifying information protection requirements in support of protecting BES Cyber Systems.", "category": "Information Protection", "weight": 2 },
+    { "ref": "CIP-013", "title": "Supply Chain Risk Management", "description": "Mitigate cybersecurity risks in the supply chain for industrial control system hardware, software, and services by implementing a supply chain cyber security risk management plan.", "category": "Supply Chain", "weight": 2 }
+  ]
+}

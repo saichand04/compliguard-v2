@@ -1,0 +1,126 @@
+{
+  "manifest_version": "1.0",
+  "name": "CompliGuard",
+  "description": "GRC Compliance platform — query and manage compliance controls, risks, policies, findings, and more",
+  "version": "2.0.0",
+  "auth": {
+    "type": "bearer",
+    "token_url": "/api/mcp/auth"
+  },
+  "tools": [
+    {
+      "name": "get_control_status",
+      "description": "List compliance controls with their current status",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "framework_id": { "type": "string", "description": "Filter by framework ID" },
+          "status": { "type": "string", "enum": ["not_started", "in_progress", "implemented", "needs_review"] },
+          "assignee_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "get_risk_summary",
+      "description": "Get open risks by severity",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "status": { "type": "string", "enum": ["identified", "mitigating", "mitigated", "accepted"] }
+        }
+      }
+    },
+    {
+      "name": "get_compliance_score",
+      "description": "Get compliance score and progress per framework",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "framework_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "get_findings",
+      "description": "Get open findings from cloud scans and penetration tests",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] },
+          "source": { "type": "string", "enum": ["aws", "azure", "gcp", "github", "pentest", "manual"] }
+        }
+      }
+    },
+    {
+      "name": "get_policy_status",
+      "description": "Get policy lifecycle status and upcoming review dates",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": { "type": "string", "enum": ["draft", "review", "approved", "archived"] }
+        }
+      }
+    },
+    {
+      "name": "get_vendor_risk",
+      "description": "Get vendor risk scores and assessment status",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vendor_id": { "type": "string" }
+        }
+      }
+    },
+    {
+      "name": "get_audit_trail",
+      "description": "Get recent compliance activity and audit events",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "framework_id": { "type": "string" },
+          "limit": { "type": "integer", "default": 20 }
+        }
+      }
+    },
+    {
+      "name": "assign_task",
+      "description": "Assign a compliance task to a team member",
+      "parameters": {
+        "type": "object",
+        "required": ["task_id", "assignee_id"],
+        "properties": {
+          "task_id": { "type": "string" },
+          "assignee_id": { "type": "string" },
+          "due_date": { "type": "string", "format": "date" }
+        }
+      }
+    },
+    {
+      "name": "submit_evidence",
+      "description": "Submit evidence for a compliance control",
+      "parameters": {
+        "type": "object",
+        "required": ["control_assignment_id", "title", "evidence_type"],
+        "properties": {
+          "control_assignment_id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "evidence_type": { "type": "string", "enum": ["screenshot", "document", "log", "automated", "text"] },
+          "content": { "type": "string", "description": "Text content for text evidence type" }
+        }
+      }
+    },
+    {
+      "name": "run_nl_test",
+      "description": "Run a natural language automated compliance test",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "test_id": { "type": "string" },
+          "query": { "type": "string", "description": "Natural language test, e.g. check if SSL is enabled on api.acme.com" }
+        }
+      }
+    }
+  ]
+}

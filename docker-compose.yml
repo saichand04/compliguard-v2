@@ -1,0 +1,159 @@
+version: "3.9"
+
+# ============================================================
+# CompliGuard v2 — Docker Compose
+# Full stack: app + postgres + minio + redis
+# ============================================================
+
+services:
+  # ── Application ──────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: compliguard-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-compliguard}:${POSTGRES_PASSWORD:-compliguard_secret}@postgres:5432/${POSTGRES_DB:-compliguard}
+      REDIS_URL: redis://redis:6379
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-s3}
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET:-compliguard}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION:-us-east-1}
+      STORAGE_S3_ACCESS_KEY_ID: ${STORAGE_S3_ACCESS_KEY_ID:-minioadmin}
+      STORAGE_S3_SECRET_ACCESS_KEY: ${STORAGE_S3_SECRET_ACCESS_KEY:-minioadmin}
+      STORAGE_S3_ENDPOINT: http://minio:9000
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      POSTMARK_SERVER_TOKEN: ${POSTMARK_SERVER_TOKEN:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    networks:
+      - compliguard
+
+  # ── PostgreSQL ────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: compliguard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-compliguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-compliguard_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-compliguard}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-compliguard} -d ${POSTGRES_DB:-compliguard}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - compliguard
+
+  # ── MinIO (S3-compatible object storage) ─────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: compliguard-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${STORAGE_S3_SECRET_ACCESS_KEY:-minioadmin}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - compliguard
+
+  # ── MinIO bucket initializer ──────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    container_name: compliguard-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 ${STORAGE_S3_ACCESS_KEY_ID:-minioadmin} ${STORAGE_S3_SECRET_ACCESS_KEY:-minioadmin};
+        mc mb --ignore-existing local/${STORAGE_S3_BUCKET:-compliguard};
+        mc anonymous set none local/${STORAGE_S3_BUCKET:-compliguard};
+        echo 'MinIO bucket initialized';
+      "
+    networks:
+      - compliguard
+
+  # ── Redis (rate limiting + session cache) ────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: compliguard-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - compliguard
+
+  # ── DB migration runner (one-shot) ───────────────────────
+  db-migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    container_name: compliguard-db-migrate
+    command: >
+      sh -c "npm run db:migrate && npm run db:seed"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-compliguard}:${POSTGRES_PASSWORD:-compliguard_secret}@postgres:5432/${POSTGRES_DB:-compliguard}
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - compliguard
+    profiles:
+      - migrate
+
+networks:
+  compliguard:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
+  redis_data:
+  uploads:

@@ -1,0 +1,32 @@
+{
+  "id": "iso9001",
+  "name": "ISO 9001:2015",
+  "slug": "iso9001",
+  "version": "2015",
+  "description": "International standard for quality management systems (QMS). Provides a framework for organizations to consistently provide products and services that meet customer and regulatory requirements.",
+  "authority": "ISO",
+  "category": "quality",
+  "website": "https://www.iso.org/standard/62085.html",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "4.1", "title": "Understanding the organization and its context", "description": "The organization shall determine external and internal issues that are relevant to its purpose and its strategic direction and that affect its ability to achieve the intended result(s) of its QMS.", "category": "Context of the Organization", "weight": 1 },
+    { "ref": "4.2", "title": "Needs and expectations of interested parties", "description": "The organization shall determine the interested parties that are relevant to the QMS and their requirements.", "category": "Context of the Organization", "weight": 1 },
+    { "ref": "5.1", "title": "Leadership and commitment", "description": "Top management shall demonstrate leadership and commitment with respect to the QMS by taking accountability for the effectiveness of the QMS.", "category": "Leadership", "weight": 2 },
+    { "ref": "5.2", "title": "Quality policy", "description": "Top management shall establish, implement, and maintain a quality policy that is appropriate to the purpose and context of the organization.", "category": "Leadership", "weight": 1 },
+    { "ref": "6.1", "title": "Actions to address risks and opportunities", "description": "When planning for the QMS, the organization shall consider issues, requirements, and determine risks and opportunities that need to be addressed.", "category": "Planning", "weight": 2 },
+    { "ref": "6.2", "title": "Quality objectives", "description": "The organization shall establish quality objectives at relevant functions, levels, and processes needed for the QMS.", "category": "Planning", "weight": 1 },
+    { "ref": "7.1", "title": "Resources", "description": "The organization shall determine and provide the resources needed for the establishment, implementation, maintenance, and continual improvement of the QMS.", "category": "Support", "weight": 1 },
+    { "ref": "7.3", "title": "Awareness", "description": "The organization shall ensure that persons doing work under the organization's control are aware of the quality policy and relevant objectives.", "category": "Support", "weight": 1 },
+    { "ref": "7.5", "title": "Documented information", "description": "The organization's QMS shall include documented information required by this International Standard and determined by the organization as being necessary for the effectiveness of the QMS.", "category": "Support", "weight": 1 },
+    { "ref": "8.1", "title": "Operational planning and control", "description": "The organization shall plan, implement, control, monitor and review processes needed for the provision of products and services.", "category": "Operation", "weight": 2 },
+    { "ref": "8.4", "title": "Control of externally provided processes, products and services", "description": "The organization shall ensure that externally provided processes, products and services conform to requirements.", "category": "Operation", "weight": 2 },
+    { "ref": "8.5", "title": "Production and service provision", "description": "The organization shall implement production and service provision under controlled conditions.", "category": "Operation", "weight": 2 },
+    { "ref": "8.7", "title": "Control of nonconforming outputs", "description": "The organization shall ensure that outputs that do not conform to their requirements are identified and controlled to prevent their unintended use or delivery.", "category": "Operation", "weight": 2 },
+    { "ref": "9.1", "title": "Monitoring, measurement, analysis and evaluation", "description": "The organization shall determine what needs to be monitored and measured, the methods for monitoring, measurement, analysis and evaluation needed to ensure valid results.", "category": "Performance Evaluation", "weight": 1 },
+    { "ref": "9.2", "title": "Internal audit", "description": "The organization shall conduct internal audits at planned intervals to provide information on whether the QMS conforms to requirements.", "category": "Performance Evaluation", "weight": 2 },
+    { "ref": "9.3", "title": "Management review", "description": "Top management shall review the organization's QMS at planned intervals, to ensure its continuing suitability, adequacy, effectiveness and alignment with strategic direction.", "category": "Performance Evaluation", "weight": 1 },
+    { "ref": "10.2", "title": "Nonconformity and corrective action", "description": "When a nonconformity occurs, the organization shall react to the nonconformity, evaluate the need for action to eliminate the causes, and implement any actions needed.", "category": "Improvement", "weight": 2 },
+    { "ref": "10.3", "title": "Continual improvement", "description": "The organization shall continually improve the suitability, adequacy and effectiveness of the QMS.", "category": "Improvement", "weight": 1 }
+  ]
+}

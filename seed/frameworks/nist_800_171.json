@@ -1,0 +1,33 @@
+{
+  "id": "nist_800_171",
+  "name": "NIST SP 800-171 Rev 2",
+  "slug": "nist-800-171",
+  "version": "Rev2",
+  "description": "NIST SP 800-171 — Protecting Controlled Unclassified Information in Nonfederal Systems and Organizations. Required for DoD contractors and federal supply chain.",
+  "authority": "NIST",
+  "category": "government",
+  "website": "https://csrc.nist.gov/publications/detail/sp/800-171/rev-2/final",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "3.1.1", "title": "Authorized Access Control", "description": "Limit system access to authorized users, processes acting on behalf of authorized users, and devices (including other systems).", "category": "Access Control", "weight": 3 },
+    { "ref": "3.1.2", "title": "Transaction and Function Control", "description": "Limit system access to the types of transactions and functions that authorized users are permitted to execute.", "category": "Access Control", "weight": 2 },
+    { "ref": "3.1.5", "title": "Least Privilege", "description": "Employ the principle of least privilege, including for specific security functions and privileged accounts.", "category": "Access Control", "weight": 2 },
+    { "ref": "3.1.12", "title": "Remote Access Monitoring", "description": "Monitor and control remote access sessions.", "category": "Access Control", "weight": 2 },
+    { "ref": "3.1.13", "title": "Remote Access Cryptography", "description": "Employ cryptographic mechanisms to protect the confidentiality of remote access sessions.", "category": "Access Control", "weight": 2 },
+    { "ref": "3.2.1", "title": "Role-Based Risk Awareness", "description": "Ensure that managers, systems administrators, and users of organizational systems are made aware of the security risks associated with their activities.", "category": "Awareness and Training", "weight": 1 },
+    { "ref": "3.3.1", "title": "System Auditing", "description": "Create and retain system audit logs and records to the extent needed to enable the monitoring, analysis, investigation, and reporting of unlawful or unauthorized system activity.", "category": "Audit and Accountability", "weight": 2 },
+    { "ref": "3.3.2", "title": "User Actions Accountability", "description": "Ensure that the actions of individual system users can be traced to those users so they can be held accountable for their actions.", "category": "Audit and Accountability", "weight": 2 },
+    { "ref": "3.4.1", "title": "Baseline Configurations", "description": "Establish and maintain baseline configurations and inventories of organizational systems throughout the respective system development life cycles.", "category": "Configuration Management", "weight": 2 },
+    { "ref": "3.4.2", "title": "Security Configuration Enforcement", "description": "Establish and enforce security configuration settings for information technology products employed in organizational systems.", "category": "Configuration Management", "weight": 2 },
+    { "ref": "3.5.3", "title": "Multi-factor Authentication", "description": "Use multi-factor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.", "category": "Identification and Authentication", "weight": 3 },
+    { "ref": "3.6.1", "title": "Incident Handling Capability", "description": "Establish an operational incident-handling capability for organizational systems that includes preparation, detection, analysis, containment, recovery, and user response activities.", "category": "Incident Response", "weight": 2 },
+    { "ref": "3.11.1", "title": "Risk Assessment", "description": "Periodically assess the risk to organizational operations, organizational assets, and individuals, resulting from the operation of organizational systems.", "category": "Risk Assessment", "weight": 2 },
+    { "ref": "3.11.2", "title": "Vulnerability Scanning", "description": "Scan for vulnerabilities in organizational systems and applications periodically and when new vulnerabilities affecting those systems and applications are identified.", "category": "Risk Assessment", "weight": 2 },
+    { "ref": "3.13.1", "title": "Boundary Protection", "description": "Monitor, control, and protect organizational communications at the external boundaries and key internal boundaries of organizational systems.", "category": "System and Communications Protection", "weight": 3 },
+    { "ref": "3.13.8", "title": "Data in Transit Encryption", "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure of CUI during transmission unless otherwise protected by alternative physical safeguards.", "category": "System and Communications Protection", "weight": 2 },
+    { "ref": "3.13.10", "title": "Cryptographic Key Management", "description": "Establish and manage cryptographic keys when cryptography is employed within organizational systems.", "category": "System and Communications Protection", "weight": 2 },
+    { "ref": "3.14.1", "title": "Flaw Remediation", "description": "Identify, report, and correct information and information system flaws in a timely manner.", "category": "System and Information Integrity", "weight": 2 },
+    { "ref": "3.14.6", "title": "Security Monitoring", "description": "Monitor organizational systems, including inbound and outbound communications traffic, to detect attacks and indicators of potential attacks.", "category": "System and Information Integrity", "weight": 2 }
+  ]
+}

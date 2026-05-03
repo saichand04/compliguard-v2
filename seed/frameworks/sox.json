@@ -1,0 +1,27 @@
+{
+  "id": "sox",
+  "name": "Sarbanes-Oxley Act (SOX)",
+  "slug": "sox",
+  "version": "2002",
+  "description": "Sarbanes-Oxley Act — U.S. federal law establishing requirements for financial reporting and internal controls for publicly traded companies. Section 404 is the primary IT compliance driver.",
+  "authority": "SEC / PCAOB",
+  "category": "financial",
+  "website": "https://www.sec.gov/about/offices/oca/soxact2002.pdf",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "SOX-302", "title": "Section 302 — Corporate Responsibility for Financial Reports", "description": "CEO and CFO must personally certify the accuracy of financial reports and the effectiveness of internal controls. Disclosures must include any significant changes in internal controls.", "category": "Financial Reporting", "weight": 3 },
+    { "ref": "SOX-404", "title": "Section 404 — Management Assessment of Internal Controls", "description": "Management must include in annual reports an assessment of the effectiveness of internal controls over financial reporting. External auditors must attest to management's assessment.", "category": "Internal Controls", "weight": 3 },
+    { "ref": "SOX-409", "title": "Section 409 — Real Time Disclosure", "description": "Companies must disclose material changes in financial condition or operations on a rapid and current basis.", "category": "Disclosure", "weight": 2 },
+    { "ref": "ITGC-1", "title": "IT General Controls — Change Management", "description": "Changes to IT systems must be authorized, tested, and approved before promotion to production. Emergency changes must follow defined procedures and be reviewed after implementation.", "category": "IT General Controls", "weight": 2 },
+    { "ref": "ITGC-2", "title": "IT General Controls — Logical Access", "description": "Access to financial applications and data must be restricted to authorized personnel. User access must be reviewed periodically. Segregation of duties must be enforced.", "category": "IT General Controls", "weight": 3 },
+    { "ref": "ITGC-3", "title": "IT General Controls — Computer Operations", "description": "IT operations must ensure availability and reliability of systems supporting financial reporting. Incident management, backup, and recovery procedures must be established.", "category": "IT General Controls", "weight": 2 },
+    { "ref": "ITGC-4", "title": "IT General Controls — Data Center Physical Security", "description": "Physical access to data centers and computer rooms housing financial systems must be restricted to authorized personnel.", "category": "IT General Controls", "weight": 1 },
+    { "ref": "ITGC-5", "title": "IT General Controls — Program Development", "description": "Development and implementation of new applications and major system changes must follow a defined system development lifecycle.", "category": "IT General Controls", "weight": 1 },
+    { "ref": "ITAC-1", "title": "IT Application Controls — Input Controls", "description": "Data entered into financial applications must be complete, accurate, and authorized. Input validation controls must exist to prevent erroneous data entry.", "category": "IT Application Controls", "weight": 2 },
+    { "ref": "ITAC-2", "title": "IT Application Controls — Processing Controls", "description": "Processing of financial data must be complete, accurate, and authorized. Processing controls must detect and reject erroneous transactions.", "category": "IT Application Controls", "weight": 2 },
+    { "ref": "ITAC-3", "title": "IT Application Controls — Output Controls", "description": "Output from financial applications must be complete, accurate, distributed only to authorized recipients, and reconciled to input.", "category": "IT Application Controls", "weight": 2 },
+    { "ref": "SOX-AUDIT-1", "title": "Audit Trail and Log Retention", "description": "Complete and accurate audit trails must be maintained for financial transactions and access to financial systems for at least 7 years.", "category": "Audit", "weight": 2 },
+    { "ref": "SOX-DR-1", "title": "Disaster Recovery and Business Continuity", "description": "Business continuity and disaster recovery plans for financial systems must be documented, tested, and maintained.", "category": "Business Continuity", "weight": 2 }
+  ]
+}

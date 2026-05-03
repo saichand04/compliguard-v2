@@ -1,0 +1,22 @@
+{
+  "id": "iso27017",
+  "name": "ISO/IEC 27017:2015",
+  "slug": "iso27017",
+  "version": "2015",
+  "description": "Code of practice for information security controls based on ISO/IEC 27002 for cloud services. Provides guidelines for both cloud service providers and cloud service customers.",
+  "authority": "ISO/IEC",
+  "category": "security",
+  "website": "https://www.iso.org/standard/43757.html",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "CLD.6.3.1", "title": "Shared roles and responsibilities within a cloud computing environment", "description": "The roles and responsibilities of the cloud service provider and the cloud service customer shall be defined, documented, and communicated in the service agreement.", "category": "Organization", "weight": 2 },
+    { "ref": "CLD.8.1.5", "title": "Removal of cloud service customer assets", "description": "The cloud service provider shall provide cloud service customers with the ability to extract all their data and ensure the data is deleted after withdrawal.", "category": "Asset Management", "weight": 2 },
+    { "ref": "CLD.9.5.1", "title": "Segregation in virtual computing environments", "description": "The cloud service provider shall ensure that virtual computing environments are isolated from other virtual computing environments and from the management plane.", "category": "Access Control", "weight": 3 },
+    { "ref": "CLD.9.5.2", "title": "Virtual machine hardening", "description": "Virtual machines shall be hardened, in accordance with business needs, in a way that is consistent with procedures for physical end points.", "category": "Access Control", "weight": 2 },
+    { "ref": "CLD.12.1.5", "title": "Administrator's operational security", "description": "Cloud service providers shall ensure that all administrative operations are logged and reviewed on a regular basis.", "category": "Operations", "weight": 2 },
+    { "ref": "CLD.12.4.5", "title": "Monitoring of cloud services", "description": "The cloud service provider shall make monitoring information available to cloud service customers relevant to their cloud computing environment.", "category": "Monitoring", "weight": 2 },
+    { "ref": "CLD.13.1.4", "title": "Alignment of security management for virtual and physical networks", "description": "The cloud service provider shall implement controls to ensure that virtual networks are managed in a consistent manner with physical network controls.", "category": "Network Security", "weight": 2 },
+    { "ref": "CLD.16.1.3", "title": "Business continuity for cloud service customers", "description": "The cloud service provider shall provide cloud service customers with the information required for the customers to implement adequate business continuity management.", "category": "Incident Management", "weight": 2 }
+  ]
+}

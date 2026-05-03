@@ -1,0 +1,63 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules
+npm-debug.log*
+
+# Next.js
+.next
+out
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Testing
+coverage
+.vitest
+playwright-report
+test-results
+
+# Local dev
+.DS_Store
+*.local
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+
+# IDE
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# CI
+.github
+
+# Docs
+*.md
+CHANGELOG*
+LICENSE
+CONTRIBUTING*
+CODE_OF_CONDUCT*
+
+# Seed (optional at build — baked in via COPY seed ./seed)
+# seed/
+
+# Misc
+*.tgz
+.turbo

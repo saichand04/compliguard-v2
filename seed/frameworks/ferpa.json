@@ -1,0 +1,24 @@
+{
+  "id": "ferpa",
+  "name": "FERPA",
+  "slug": "ferpa",
+  "version": "2011",
+  "description": "Family Educational Rights and Privacy Act — U.S. federal law that protects the privacy of student education records. Applies to all schools that receive federal funding.",
+  "authority": "U.S. Department of Education",
+  "category": "privacy",
+  "website": "https://studentprivacy.ed.gov/ferpa",
+  "logo_url": null,
+  "is_active": true,
+  "controls": [
+    { "ref": "FERPA-1", "title": "Annual Notification", "description": "Schools must annually notify students and parents of their FERPA rights, including the right to inspect and review education records.", "category": "Rights Notification", "weight": 1 },
+    { "ref": "FERPA-2", "title": "Right to Inspect and Review", "description": "Students and parents have the right to inspect and review the student's education records within 45 days of the request.", "category": "Access Rights", "weight": 2 },
+    { "ref": "FERPA-3", "title": "Right to Request Amendment", "description": "Students and parents have the right to request amendment of education records they believe to be inaccurate, misleading, or otherwise violate the student's privacy rights.", "category": "Amendment Rights", "weight": 1 },
+    { "ref": "FERPA-4", "title": "Right to Consent to Disclosures", "description": "Schools must have written consent from eligible students or parents before disclosing education records, with limited exceptions.", "category": "Consent", "weight": 3 },
+    { "ref": "FERPA-5", "title": "Directory Information", "description": "Schools may disclose directory information without consent if they have notified students and parents and provided an opportunity to opt-out.", "category": "Directory Information", "weight": 1 },
+    { "ref": "FERPA-6", "title": "Legitimate Educational Interest", "description": "Schools may disclose education records to school officials with legitimate educational interest. The school must use reasonable methods to ensure appropriate access.", "category": "School Official Disclosures", "weight": 2 },
+    { "ref": "FERPA-7", "title": "Third Party Disclosures", "description": "When disclosing records to a third party, schools must make a reasonable attempt to provide notice to the student/parent and obtain consent unless an exception applies.", "category": "Third Party", "weight": 2 },
+    { "ref": "FERPA-8", "title": "Data Breach Response", "description": "Schools must respond to unauthorized disclosures of education records and assess the impact on student privacy. Notification procedures should be established.", "category": "Security", "weight": 2 },
+    { "ref": "FERPA-9", "title": "Access Controls", "description": "Schools must implement reasonable methods to ensure that only school officials with legitimate educational interest access education records.", "category": "Security", "weight": 2 },
+    { "ref": "FERPA-10", "title": "Record Keeping of Disclosures", "description": "Schools must maintain a record of all parties that have requested or obtained access to a student's education records, and the legitimate interest of each party.", "category": "Records", "weight": 1 }
+  ]
+}
