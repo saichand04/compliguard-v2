@@ -1,11 +1,8 @@
-'use client'
-
-import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
 
 interface WizardStep {
   number: number
-  name: string
+  label: string
   description?: string
 }
 
@@ -16,41 +13,96 @@ interface WizardProgressProps {
 
 export function WizardProgress({ steps, currentStep }: WizardProgressProps) {
   return (
-    <div className="w-full py-6 px-4">
-      <div className="flex items-center justify-between relative">
-        {/* Connecting line */}
-        <div className="absolute top-4 left-0 right-0 h-px bg-slate-200 dark:bg-slate-700" />
-        <div
-          className="absolute top-4 left-0 h-px bg-blue-600 transition-all duration-500"
-          style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
-        />
+    <div style={{ marginBottom: 32 }}>
+      {/* Step counter */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+      }}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+          Step {currentStep} of {steps.length}
+        </span>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {Math.round(((currentStep - 1) / steps.length) * 100)}% complete
+        </span>
+      </div>
 
+      {/* Track */}
+      <div className="progress-track" style={{ marginBottom: 20 }}>
+        <div
+          className="progress-fill"
+          style={{ width: `${((currentStep - 1) / steps.length) * 100}%` }}
+        />
+      </div>
+
+      {/* Step dots — compact row */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        position: 'relative',
+        gap: 4,
+      }}>
         {steps.map((step) => {
-          const isCompleted = step.number < currentStep
-          const isCurrent = step.number === currentStep
-          const isUpcoming = step.number > currentStep
+          const isComplete = step.number < currentStep
+          const isCurrent  = step.number === currentStep
+          const isPending  = step.number > currentStep
 
           return (
-            <div key={step.number} className="relative flex flex-col items-center gap-1 z-10">
-              <div
-                className={cn(
-                  'w-8 h-8 rounded-full flex items-center justify-center border-2 text-sm font-semibold transition-all',
-                  isCompleted && 'bg-blue-600 border-blue-600 text-white',
-                  isCurrent && 'bg-white border-blue-600 text-blue-600 dark:bg-slate-800',
-                  isUpcoming && 'bg-white border-slate-300 text-slate-400 dark:bg-slate-800 dark:border-slate-600'
+            <div
+              key={step.number}
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 5,
+                flex: 1,
+              }}
+            >
+              <div style={{
+                width: 28,
+                height: 28,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: isComplete
+                  ? 'linear-gradient(135deg, #7C3AED, #06B6D4)'
+                  : isCurrent
+                    ? 'var(--violet-dim)'
+                    : 'rgba(255,255,255,0.04)',
+                border: isCurrent
+                  ? '2px solid var(--violet)'
+                  : isComplete
+                    ? '2px solid transparent'
+                    : '1px solid var(--border-glass)',
+                boxShadow: isCurrent ? '0 0 12px rgba(139,92,246,0.45)' : 'none',
+                transition: 'all 0.2s ease',
+                flexShrink: 0,
+              }}>
+                {isComplete ? (
+                  <Check size={12} style={{ color: 'white' }} />
+                ) : (
+                  <span style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: isCurrent ? 'var(--violet)' : 'var(--text-muted)',
+                  }}>
+                    {step.number}
+                  </span>
                 )}
-              >
-                {isCompleted ? <Check className="w-4 h-4" /> : step.number}
               </div>
-              <span
-                className={cn(
-                  'text-xs font-medium whitespace-nowrap hidden sm:block',
-                  isCurrent && 'text-blue-600',
-                  isCompleted && 'text-slate-600 dark:text-slate-400',
-                  isUpcoming && 'text-slate-400'
-                )}
-              >
-                {step.name}
+              <span style={{
+                fontSize: 9.5,
+                fontWeight: isCurrent ? 600 : 400,
+                color: isComplete ? 'var(--emerald)' : isCurrent ? 'var(--violet)' : 'var(--text-muted)',
+                textAlign: 'center',
+                lineHeight: 1.2,
+                letterSpacing: '0.01em',
+                maxWidth: 60,
+              }}>
+                {step.label}
               </span>
             </div>
           )

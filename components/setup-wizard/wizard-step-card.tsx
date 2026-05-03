@@ -1,6 +1,5 @@
 'use client'
 
-import { cn } from '@/lib/utils'
 import { ArrowLeft, ArrowRight, Loader2 } from 'lucide-react'
 
 interface WizardStepCardProps {
@@ -15,7 +14,7 @@ interface WizardStepCardProps {
   loading?: boolean
   skipLabel?: string
   onSkip?: () => void
-  className?: string
+  icon?: React.ReactNode
 }
 
 export function WizardStepCard({
@@ -24,46 +23,81 @@ export function WizardStepCard({
   children,
   onBack,
   onNext,
-  nextLabel = 'Next',
+  nextLabel = 'Continue',
   backLabel = 'Back',
   nextDisabled = false,
   loading = false,
   skipLabel,
   onSkip,
-  className,
+  icon,
 }: WizardStepCardProps) {
   return (
-    <div className={cn('bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-200 dark:border-slate-700', className)}>
+    <div
+      className="glass-strong animate-fade-up"
+      style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden' }}
+    >
       {/* Header */}
-      <div className="px-8 pt-8 pb-4 border-b border-slate-100 dark:border-slate-700">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-white">{title}</h2>
-        <p className="text-sm text-slate-500 mt-1">{description}</p>
+      <div style={{
+        padding: '24px 28px 20px',
+        borderBottom: '1px solid var(--border-glass)',
+      }}>
+        {icon && (
+          <div style={{ marginBottom: 12 }}>{icon}</div>
+        )}
+        <h2 style={{
+          fontFamily: "'Playfair Display', serif",
+          fontSize: 20,
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          letterSpacing: '-0.01em',
+          marginBottom: 6,
+        }}>
+          {title}
+        </h2>
+        <p style={{ fontSize: 13.5, color: 'var(--text-muted)', lineHeight: 1.6 }}>{description}</p>
       </div>
 
       {/* Body */}
-      <div className="px-8 py-6">{children}</div>
+      <div style={{ padding: '24px 28px' }}>{children}</div>
 
       {/* Footer */}
-      <div className="px-8 pb-8 flex items-center justify-between">
+      <div style={{
+        padding: '16px 28px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        borderTop: '1px solid var(--border-glass)',
+      }}>
         <div>
           {onBack && (
             <button
               type="button"
               onClick={onBack}
-              className="flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium transition-colors"
+              className="btn-ghost"
+              style={{ fontSize: 13 }}
             >
-              <ArrowLeft className="w-4 h-4" />
+              <ArrowLeft size={14} />
               {backLabel}
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {skipLabel && onSkip && (
             <button
               type="button"
               onClick={onSkip}
-              className="text-sm text-slate-400 hover:text-slate-600 font-medium transition-colors"
+              style={{
+                fontSize: 13,
+                color: 'var(--text-muted)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontFamily: 'Inter, sans-serif',
+                padding: '0 8px',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.color = 'var(--text-secondary)')}
+              onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
             >
               {skipLabel}
             </button>
@@ -73,11 +107,11 @@ export function WizardStepCard({
               type="button"
               onClick={onNext}
               disabled={nextDisabled || loading}
-              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2 px-5 rounded-md text-sm transition-colors"
+              className="btn-primary"
             >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loading && <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />}
               {nextLabel}
-              {!loading && <ArrowRight className="w-4 h-4" />}
+              {!loading && <ArrowRight size={14} />}
             </button>
           )}
         </div>

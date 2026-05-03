@@ -7,6 +7,9 @@ import { jwtVerify } from 'jose'
 const PUBLIC_PATHS = [
   '/setup',
   '/api/setup',
+  '/signin',
+  '/signup',
+  '/forgot-password',
   '/trust',
   '/api/inbound-email',
   '/api/teams-bot',
@@ -44,7 +47,7 @@ export async function proxy(request: NextRequest) {
 
   if (!sessionToken) {
     // Not authenticated — redirect to sign in
-    const signinUrl = new URL('/auth/signin', request.url)
+    const signinUrl = new URL('/signin', request.url)
     signinUrl.searchParams.set('callbackUrl', pathname)
     return NextResponse.redirect(signinUrl)
   }
@@ -52,7 +55,7 @@ export async function proxy(request: NextRequest) {
   const isValid = await verifyJwt(sessionToken)
   if (!isValid) {
     // Expired or invalid token
-    const signinUrl = new URL('/auth/signin', request.url)
+    const signinUrl = new URL('/signin', request.url)
     signinUrl.searchParams.set('callbackUrl', pathname)
     const response = NextResponse.redirect(signinUrl)
     response.cookies.delete(COOKIE_NAME)

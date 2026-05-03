@@ -1,196 +1,261 @@
 import { getSession } from '@/lib/auth/jwt'
-import { db } from '@/lib/db'
-import { controlAssignments, auditLogs, tasks, organizations, organizationFrameworks, frameworks, controls } from '@/lib/db/schema'
-import { eq, and, gte, count, desc } from 'drizzle-orm'
+import { redirect } from 'next/navigation'
 import { StatsCard } from '@/components/dashboard/stats-card'
 import { FrameworkProgressCard } from '@/components/dashboard/framework-progress-card'
-import { CheckSquare, AlertCircle, Clock, XCircle, ShieldCheck, Activity } from 'lucide-react'
-import { redirect } from 'next/navigation'
-import { formatDistanceToNow } from 'date-fns'
+import {
+  Shield, CheckSquare, AlertTriangle, FileText,
+  Link2, TrendingUp, Activity, Clock, ArrowRight,
+  Zap, GitBranch, ChevronRight,
+} from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
+// ── Demo data (replaced by real DB queries once DB is connected) ──
+const STATS = [
+  { title: 'Compliance Score',  value: '84%',  subtitle: 'Across all frameworks',      trend: { value: 3.2, label: 'vs last month' }, icon: TrendingUp,    accentColor: 'violet' as const },
+  { title: 'Active Controls',   value: '1,247',subtitle: '312 need evidence',          trend: { value: 1.8, label: 'vs last week' },  icon: CheckSquare,   accentColor: 'cyan' as const },
+  { title: 'Open Risks',        value: '23',   subtitle: '5 critical, 18 medium',      trend: { value: -2,  label: 'vs last week' },  icon: AlertTriangle, accentColor: 'amber' as const },
+  { title: 'Evidence Items',    value: '4,891',subtitle: '143 pending review',         trend: { value: 7.1, label: 'this week' },     icon: FileText,      accentColor: 'emerald' as const },
+]
+
+const FRAMEWORKS = [
+  { name: 'NIST 800-53 Rev 5',  shortName: 'NIST',    progress: 78, totalControls: 1189, completedControls: 928,  dueDate: 'Jun 30, 2026', status: 'on-track' as const },
+  { name: 'HITRUST CSF v11',    shortName: 'HITRUST', progress: 62, totalControls: 833,  completedControls: 516,  dueDate: 'Aug 15, 2026', status: 'on-track' as const },
+  { name: 'ARC-AMPE v2',        shortName: 'ARC',     progress: 41, totalControls: 540,  completedControls: 221,  dueDate: 'May 31, 2026', status: 'at-risk' as const },
+  { name: 'NIST CSF 2.0',       shortName: 'CSF',     progress: 91, totalControls: 106,  completedControls: 97,   dueDate: 'Mar 1, 2026',  status: 'complete' as const },
+  { name: 'SOC 2 Type II',      shortName: 'SOC2',    progress: 55, totalControls: 64,   completedControls: 35,   dueDate: 'Apr 30, 2026', status: 'overdue' as const },
+  { name: 'ISO 27001:2022',     shortName: 'ISO27K',  progress: 70, totalControls: 93,   completedControls: 65,   dueDate: 'Sep 1, 2026',  status: 'on-track' as const },
+]
+
+const RECENT_ACTIVITY = [
+  { action: 'Evidence approved',       subject: 'AC-2 Access Management',              user: 'S. Palla',   time: '12m ago',  color: 'var(--emerald)' },
+  { action: 'Control mapping created', subject: 'HITRUST 0201.09j → NIST AC-2',        user: 'AI Engine',  time: '1h ago',   color: 'var(--violet)' },
+  { action: 'Risk escalated',          subject: 'Data Exposure — High Severity',        user: 'J. Sharma',  time: '2h ago',   color: 'var(--rose)' },
+  { action: 'Framework uploaded',      subject: 'ARC-AMPE v2 xlsx ingested',           user: 'S. Palla',   time: '3h ago',   color: 'var(--cyan)' },
+  { action: 'Policy published',        subject: 'Information Security Policy v3.1',    user: 'A. Martin',  time: '5h ago',   color: 'var(--amber)' },
+  { action: 'Task completed',          subject: 'Annual access review — Q1 2026',      user: 'K. Torres',  time: '1d ago',   color: 'var(--emerald)' },
+]
+
+const MAPPING_STATS = {
+  totalMappings: 3412,
+  autoMapped: 2918,
+  pendingReview: 312,
+  conflicts: 18,
+}
+
 export default async function DashboardPage() {
-  const session = await getSession()
-  if (!session || !session.orgId) redirect('/auth/signin')
+  let session
+  try { session = await getSession() } catch { redirect('/signin') }
+  if (!session) redirect('/signin')
 
-  const orgId = session.orgId
-
-  // Fetch control status counts
-  const statusCounts = await db
-    .select({ status: controlAssignments.status, count: count() })
-    .from(controlAssignments)
-    .where(eq(controlAssignments.organizationId, orgId))
-    .groupBy(controlAssignments.status)
-
-  const counts: Record<string, number> = {}
-  for (const row of statusCounts) {
-    counts[row.status] = row.count
-  }
-
-  const totalControls = Object.values(counts).reduce((a, b) => a + b, 0)
-  const implemented = counts['implemented'] || 0
-  const inProgress = counts['in_progress'] || 0
-  const notStarted = counts['not_started'] || 0
-  const needsReview = counts['needs_review'] || 0
-
-  // Fetch active frameworks with progress
-  const orgFrameworks = await db
-    .select({ frameworkId: organizationFrameworks.frameworkId })
-    .from(organizationFrameworks)
-    .where(and(eq(organizationFrameworks.organizationId, orgId), eq(organizationFrameworks.isActive, true)))
-    .limit(6)
-
-  const frameworkProgress = await Promise.all(
-    orgFrameworks.map(async (of) => {
-      const [fw] = await db.select().from(frameworks).where(eq(frameworks.id, of.frameworkId)).limit(1)
-      if (!fw) return null
-
-      const [totalRow] = await db
-        .select({ count: count() })
-        .from(controlAssignments)
-        .innerJoin(controls, eq(controls.id, controlAssignments.controlId))
-        .where(and(eq(controlAssignments.organizationId, orgId), eq(controls.frameworkId, fw.id)))
-
-      const [implRow] = await db
-        .select({ count: count() })
-        .from(controlAssignments)
-        .innerJoin(controls, eq(controls.id, controlAssignments.controlId))
-        .where(and(
-          eq(controlAssignments.organizationId, orgId),
-          eq(controls.frameworkId, fw.id),
-          eq(controlAssignments.status, 'implemented')
-        ))
-
-      return {
-        id: fw.id,
-        name: fw.name,
-        shortName: fw.shortName || fw.name,
-        totalControls: totalRow?.count || 0,
-        implementedControls: implRow?.count || 0,
-      }
-    })
-  )
-
-  // Recent audit logs
-  const recentActivity = await db
-    .select()
-    .from(auditLogs)
-    .where(eq(auditLogs.organizationId, orgId))
-    .orderBy(desc(auditLogs.createdAt))
-    .limit(5)
-
-  // My tasks due this week
-  const weekFromNow = new Date()
-  weekFromNow.setDate(weekFromNow.getDate() + 7)
-
-  const myTasks = await db
-    .select()
-    .from(tasks)
-    .where(and(
-      eq(tasks.organizationId, orgId),
-      eq(tasks.assignedTo, session.userId),
-      gte(tasks.dueDate, new Date())
-    ))
-    .orderBy(tasks.dueDate)
-    .limit(5)
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Dashboard</h1>
-        <p className="text-sm text-slate-500 mt-1">Your compliance overview</p>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
+
+      {/* ── Page header ──────────────────────────────────── */}
+      <div className="animate-fade-up" style={{ marginBottom: 28 }}>
+        <h1 style={{
+          fontSize: 22,
+          fontWeight: 700,
+          color: 'var(--text-primary)',
+          letterSpacing: '-0.02em',
+          marginBottom: 4,
+        }}>
+          {greeting}, <span className="text-gradient-violet">{session.firstName || 'there'}</span>
+        </h1>
+        <p style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>
+          Here's your compliance posture as of today, {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        </p>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <StatsCard label="Total Controls" value={totalControls} icon={CheckSquare} colorClass="text-slate-600" />
-        <StatsCard label="Implemented" value={implemented} icon={ShieldCheck} colorClass="text-green-600" />
-        <StatsCard label="In Progress" value={inProgress} icon={Clock} colorClass="text-blue-600" />
-        <StatsCard label="Needs Review" value={needsReview} icon={AlertCircle} colorClass="text-amber-600" />
-        <StatsCard label="Not Started" value={notStarted} icon={XCircle} colorClass="text-slate-400" />
-        <StatsCard
-          label="Implementation"
-          value={totalControls > 0 ? `${Math.round((implemented / totalControls) * 100)}%` : '0%'}
-          icon={Activity}
-          colorClass="text-purple-600"
-        />
+      {/* ── KPI Stats row ─────────────────────────────────── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+        gap: 14,
+        marginBottom: 24,
+      }}>
+        {STATS.map((stat, i) => (
+          <StatsCard key={i} {...stat} delay={i * 60} />
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* ── Main content grid ─────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 20 }}>
+
         {/* Framework progress */}
-        <div className="lg:col-span-2">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Framework Progress</h2>
-          {frameworkProgress.filter(Boolean).length === 0 ? (
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-8 text-center">
-              <p className="text-slate-400 text-sm">No frameworks activated yet.</p>
-              <a href="/frameworks" className="text-blue-600 text-sm hover:underline mt-2 inline-block">Browse frameworks →</a>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {frameworkProgress.filter(Boolean).map((fw) => fw && (
-                <FrameworkProgressCard
-                  key={fw.id}
-                  name={fw.name}
-                  shortName={fw.shortName}
-                  totalControls={fw.totalControls}
-                  implementedControls={fw.implementedControls}
-                />
-              ))}
-            </div>
-          )}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '-0.01em' }}>
+              Framework Progress
+            </h2>
+            <button className="btn-ghost" style={{ fontSize: 12, padding: '5px 10px' }}>
+              View all <ArrowRight size={12} />
+            </button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+            {FRAMEWORKS.map((fw, i) => (
+              <FrameworkProgressCard key={i} {...fw} delay={i * 50 + 100} />
+            ))}
+          </div>
         </div>
 
         {/* Right column */}
-        <div className="space-y-6">
-          {/* My tasks */}
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">My Tasks This Week</h2>
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-              {myTasks.length === 0 ? (
-                <div className="p-4 text-center text-slate-400 text-sm">No tasks due this week 🎉</div>
-              ) : (
-                myTasks.map((task) => (
-                  <div key={task.id} className="flex items-start gap-3 p-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                    <div className={`mt-0.5 w-2 h-2 rounded-full shrink-0 ${
-                      task.priority === 'urgent' ? 'bg-red-500' :
-                      task.priority === 'high' ? 'bg-amber-500' :
-                      task.priority === 'medium' ? 'bg-blue-500' : 'bg-slate-300'
-                    }`} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-900 dark:text-white truncate">{task.title}</p>
-                      {task.dueDate && (
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          Due {formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))
-              )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* AI Mapping Engine panel */}
+          <div className="glass-card animate-fade-up delay-100" style={{ padding: '16px 18px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <div style={{
+                width: 28, height: 28,
+                background: 'var(--violet-dim)',
+                border: '1px solid rgba(139,92,246,0.30)',
+                borderRadius: 8,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Zap size={13} style={{ color: 'var(--violet)' }} />
+              </div>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                Mapping Engine
+              </span>
+              <span style={{
+                marginLeft: 'auto',
+                fontSize: 10,
+                fontWeight: 600,
+                padding: '2px 7px',
+                borderRadius: 99,
+                background: 'var(--emerald-dim)',
+                color: 'var(--emerald)',
+                border: '1px solid rgba(16,185,129,0.25)',
+              }}>
+                ACTIVE
+              </span>
             </div>
+
+            {[
+              { label: 'Total Mappings',    value: MAPPING_STATS.totalMappings.toLocaleString(), color: 'var(--text-primary)' },
+              { label: 'Auto-mapped',       value: MAPPING_STATS.autoMapped.toLocaleString(),    color: 'var(--emerald)' },
+              { label: 'Pending Review',    value: MAPPING_STATS.pendingReview,                  color: 'var(--amber)' },
+              { label: 'Conflicts',         value: MAPPING_STATS.conflicts,                      color: 'var(--rose)' },
+            ].map(({ label, value, color }) => (
+              <div key={label} style={{
+                display: 'flex', justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '7px 0',
+                borderBottom: '1px solid var(--border-glass)',
+              }}>
+                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{label}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color }}>{value}</span>
+              </div>
+            ))}
+
+            <button
+              className="btn-primary"
+              style={{ width: '100%', marginTop: 14, fontSize: 12.5, padding: '8px 14px' }}
+            >
+              <Link2 size={13} />
+              Review Pending Mappings
+            </button>
           </div>
 
           {/* Recent activity */}
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-3">Recent Activity</h2>
-            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
-              {recentActivity.length === 0 ? (
-                <div className="p-4 text-center text-slate-400 text-sm">No activity yet</div>
-              ) : (
-                recentActivity.map((log) => (
-                  <div key={log.id} className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 last:border-0">
-                    <p className="text-xs text-slate-700 dark:text-slate-300">{log.description || log.action}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">
-                      {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
-                    </p>
-                  </div>
-                ))
-              )}
+          <div className="glass-card animate-fade-up delay-150" style={{ padding: '16px 18px', flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <Activity size={14} style={{ color: 'var(--text-muted)' }} />
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Activity
+                </span>
+              </div>
+              <button style={{ fontSize: 11.5, color: 'var(--violet)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                View all
+              </button>
             </div>
+
+            {RECENT_ACTIVITY.map((item, i) => (
+              <div
+                key={i}
+                style={{
+                  display: 'flex',
+                  gap: 10,
+                  padding: '8px 0',
+                  borderBottom: i < RECENT_ACTIVITY.length - 1 ? '1px solid var(--border-glass)' : 'none',
+                  cursor: 'pointer',
+                  transition: 'opacity 0.12s',
+                }}
+              >
+                <div style={{
+                  width: 6, height: 6, borderRadius: '50%',
+                  background: item.color,
+                  boxShadow: `0 0 5px ${item.color}`,
+                  marginTop: 5, flexShrink: 0,
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)', marginBottom: 1 }}>
+                    {item.action}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {item.subject}
+                  </div>
+                </div>
+                <div style={{ flexShrink: 0, textAlign: 'right' }}>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{item.time}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{item.user}</div>
+                </div>
+              </div>
+            ))}
           </div>
+
         </div>
       </div>
+
+      {/* ── Bottom: Quick actions row ──────────────────────── */}
+      <div className="animate-fade-up delay-200" style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
+        gap: 10,
+      }}>
+        {[
+          { icon: Shield,      label: 'Add Framework',    desc: 'Upload or select',   color: 'var(--violet)',  href: '/frameworks' },
+          { icon: FileText,    label: 'Submit Evidence',  desc: 'Attach & classify',  color: 'var(--cyan)',    href: '/evidence' },
+          { icon: AlertTriangle, label: 'Log Risk',       desc: 'Record & assess',    color: 'var(--amber)',   href: '/risks' },
+          { icon: Link2,       label: 'Map Controls',     desc: 'Cross-framework',    color: 'var(--emerald)', href: '/control-mapping' },
+          { icon: GitBranch,   label: 'Integrations',     desc: 'Connect data sources',color: 'var(--rose)',   href: '/integrations' },
+        ].map(({ icon: Icon, label, desc, color, href }) => (
+          <a
+            key={href}
+            href={href}
+            className="glass-card"
+            style={{
+              padding: '14px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              textDecoration: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            <div style={{
+              width: 34, height: 34,
+              background: `${color}18`,
+              border: `1px solid ${color}30`,
+              borderRadius: 9,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <Icon size={15} style={{ color }} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{desc}</div>
+            </div>
+            <ChevronRight size={13} style={{ color: 'var(--text-muted)', marginLeft: 'auto', flexShrink: 0 }} />
+          </a>
+        ))}
+      </div>
+
     </div>
   )
 }

@@ -8,10 +8,10 @@ import { ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const WIZARD_STEPS = [
-  { number: 1, name: 'Welcome' }, { number: 2, name: 'Organization' },
-  { number: 3, name: 'Admin Account' }, { number: 4, name: 'Users' },
-  { number: 5, name: 'Email' }, { number: 6, name: 'Storage' },
-  { number: 7, name: 'AI' }, { number: 8, name: 'Integrations' }, { number: 9, name: 'Review' },
+  { number: 1, label: 'Welcome' }, { number: 2, label: 'Organization' },
+  { number: 3, label: 'Admin Account' }, { number: 4, label: 'Users' },
+  { number: 5, label: 'Email' }, { number: 6, label: 'Storage' },
+  { number: 7, label: 'AI' }, { number: 8, label: 'Integrations' }, { number: 9, label: 'Review' },
 ]
 
 interface IntegrationConfig {
@@ -95,7 +95,6 @@ export default function IntegrationsPage() {
         loading={loading}
         skipLabel="Skip all for now"
         onSkip={() => router.push('/setup/review')}
-        className="mt-4"
       >
         <div className="space-y-3">
           {integrations.map((integration) => (

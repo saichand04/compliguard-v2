@@ -17,7 +17,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-background antialiased">
+      <body style={{ minHeight: '100dvh', background: 'var(--bg-base)', WebkitFontSmoothing: 'antialiased' }}>
         {children}
       </body>
     </html>

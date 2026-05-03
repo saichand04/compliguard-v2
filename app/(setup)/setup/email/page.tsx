@@ -8,10 +8,10 @@ import { CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const WIZARD_STEPS = [
-  { number: 1, name: 'Welcome' }, { number: 2, name: 'Organization' },
-  { number: 3, name: 'Admin Account' }, { number: 4, name: 'Users' },
-  { number: 5, name: 'Email' }, { number: 6, name: 'Storage' },
-  { number: 7, name: 'AI' }, { number: 8, name: 'Integrations' }, { number: 9, name: 'Review' },
+  { number: 1, label: 'Welcome' }, { number: 2, label: 'Organization' },
+  { number: 3, label: 'Admin Account' }, { number: 4, label: 'Users' },
+  { number: 5, label: 'Email' }, { number: 6, label: 'Storage' },
+  { number: 7, label: 'AI' }, { number: 8, label: 'Integrations' }, { number: 9, label: 'Review' },
 ]
 
 type EmailProvider = 'resend' | 'sendgrid' | 'postmark' | 'smtp'
@@ -70,7 +70,6 @@ export default function EmailSetupPage() {
         onBack={() => router.push('/setup/users')}
         onNext={handleNext}
         loading={loading}
-        className="mt-4"
       >
         <div className="space-y-4">
           <div>

@@ -9,15 +9,15 @@ import { WizardProgress } from '@/components/setup-wizard/wizard-progress'
 import { WizardStepCard } from '@/components/setup-wizard/wizard-step-card'
 
 const WIZARD_STEPS = [
-  { number: 1, name: 'Welcome' },
-  { number: 2, name: 'Organization' },
-  { number: 3, name: 'Admin Account' },
-  { number: 4, name: 'Users' },
-  { number: 5, name: 'Email' },
-  { number: 6, name: 'Storage' },
-  { number: 7, name: 'AI' },
-  { number: 8, name: 'Integrations' },
-  { number: 9, name: 'Review' },
+  { number: 1, label: 'Welcome' },
+  { number: 2, label: 'Organization' },
+  { number: 3, label: 'Admin Account' },
+  { number: 4, label: 'Users' },
+  { number: 5, label: 'Email' },
+  { number: 6, label: 'Storage' },
+  { number: 7, label: 'AI' },
+  { number: 8, label: 'Integrations' },
+  { number: 9, label: 'Review' },
 ]
 
 const orgSchema = z.object({
@@ -68,7 +68,6 @@ export default function OrganizationPage() {
         onBack={() => router.push('/setup/welcome')}
         onNext={onNext}
         loading={loading}
-        className="mt-4"
       >
         <div className="space-y-4">
           <div>

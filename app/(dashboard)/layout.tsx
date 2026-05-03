@@ -5,19 +5,32 @@ import { DashboardHeader } from '@/components/dashboard/header'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
-  if (!session) redirect('/auth/signin')
+  if (!session) redirect('/signin')
 
   return (
-    <div className="flex h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden">
+    <div style={{ position: 'relative', height: '100dvh', display: 'flex', overflow: 'hidden' }}>
+      {/* Ambient background — persists across all dashboard pages */}
+      <div className="cg-bg" />
+
+      {/* Sidebar */}
       <DashboardSidebar role={session.role} />
-      <div className="flex-1 flex flex-col overflow-hidden">
+
+      {/* Main content area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         <DashboardHeader
           firstName={session.firstName || ''}
           lastName={session.lastName || ''}
           email={session.email}
           role={session.role}
         />
-        <main className="flex-1 overflow-auto p-6">
+        <main
+          style={{
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            padding: '24px',
+          }}
+        >
           {children}
         </main>
       </div>
