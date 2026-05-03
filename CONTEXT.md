@@ -2,7 +2,7 @@
 
 > **Purpose:** This file is the single source of truth for all decisions, architecture, conversation history, and feature tracking for CompliGuard v2. Any AI session (Claude, GPT, Gemini, or OpenClaw agent) that reads this file should be able to fully understand where this project came from, what has been built, what is in progress, and what comes next — and pick up development without any additional context.
 
-> **Last updated:** May 3, 2026
+> **Last updated:** May 3, 2026 — Phase 0 build clean, controls mapping engine architecture added
 
 ---
 
@@ -21,10 +21,11 @@
 11. [Setup Wizard Design](#11-setup-wizard-design)
 12. [OpenClaw MCP Server Design](#12-openclaw-mcp-server-design)
 13. [Microsoft Teams Bot Design](#13-microsoft-teams-bot-design)
-14. [Development Progress Tracker](#14-development-progress-tracker)
-15. [Technical Debt Log](#15-technical-debt-log)
-16. [Environment Variables Reference](#16-environment-variables-reference)
-17. [Repo Structure](#17-repo-structure)
+14. [Controls Mapping Engine Architecture](#14-controls-mapping-engine-architecture)
+15. [Development Progress Tracker](#15-development-progress-tracker)
+16. [Technical Debt Log](#16-technical-debt-log)
+17. [Environment Variables Reference](#17-environment-variables-reference)
+18. [Repo Structure](#18-repo-structure)
 
 ---
 
@@ -734,18 +735,204 @@ updated_at      TIMESTAMPTZ
 
 ---
 
-## 14. Development Progress Tracker
+## 14. Controls Mapping Engine Architecture
 
-### Phase 0 — Foundation & Repo Setup
-- [ ] 0.1 GitHub repo created
-- [ ] 0.2 CONTEXT.md written
-- [ ] 0.3 Tech debt fixed
-- [ ] 0.4 Tests + CI
-- [ ] 0.5 Logging + Sentry
-- [ ] 0.6 Drizzle ORM
-- [ ] 0.7 Seed data
-- [ ] 0.8 Docker + Linux install
-- [ ] 0.9 Setup Wizard
+> **Status:** Designed. Implementation starts Phase 1. This is the most critical differentiator in CompliGuard.
+
+### Problem Statement
+
+HITRUST, ARC-AMPE, NIST CSF, and dozens of other frameworks all reference NIST 800-53 — but their control IDs, subsection numbering, and supplemental requirements differ dramatically from each other and from the raw NIST source. Naive string matching fails. Evidence collected for one framework needs to propagate to equivalent controls in every other active framework automatically.
+
+### 4-Layer Architecture
+
+```
+Layer 1: Canonical Control Store
+Layer 2: Mapping Graph
+Layer 3: Evidence Inheritance Engine
+Layer 4: AI Mapping Engine
+```
+
+#### Layer 1 — Canonical Control Store
+
+Every ingested control is normalized into a universal schema:
+
+```typescript
+interface CanonicalControl {
+  id: string                    // UUID
+  frameworkId: string           // FK → frameworks.id
+  controlId: string             // Raw ID from source (e.g. "AC-2", "0201.09j1Org.124")
+  nist80053Refs: string[]       // NIST 800-53 Rev 5 anchors (e.g. ["AC-2", "AC-2(1)"])
+  scfRefs: string[]             // SCF metaframework IDs
+  tags: string[]                // Normalized topic tags (e.g. "access-control", "mfa")
+  rawText: string               // Original control text, unmodified
+  title: string
+  guidance?: string
+  testProcedure?: string
+  supplementalRequirements?: string[]  // Framework-specific extras on top of NIST
+}
+```
+
+**Key rule:** Every control gets tagged with `nist80053Refs[]` at ingestion — this is the universal anchor for cross-framework mapping.
+
+#### Layer 2 — Mapping Graph
+
+Directed graph where edges represent relationships between controls:
+
+```typescript
+type MappingEdgeType =
+  | 'EQUIVALENT'    // Functionally identical — safe to share evidence
+  | 'PARTIAL'       // Overlapping but not complete — evidence may partially satisfy
+  | 'SUBSUMES'      // A contains B — A's evidence satisfies B, not vice versa
+  | 'REFERENCES'    // A cites B — informational, no evidence propagation
+  | 'CONFLICTS'     // Contradictory requirements — evidence from one fails the other
+
+interface MappingEdge {
+  id: string
+  sourceControlId: string
+  targetControlId: string
+  edgeType: MappingEdgeType
+  confidenceScore: number          // 0.0–1.0
+  mappingBasis: string             // 'nist_anchor' | 'scf_lookup' | 'user_crosswalk' | 'llm_semantic' | 'id_pattern'
+  isVerified: boolean              // Human-reviewed
+  isDetached: boolean              // User explicitly broke this mapping (permanent until re-linked)
+  supplementalRequirements: string[] // What extra evidence target needs beyond source
+  scopeDelta: string | null        // Narrative description of scope difference
+  requiresAdditionalEvidence: boolean  // Always true for ARC-AMPE targets
+}
+```
+
+#### Layer 3 — Evidence Inheritance Engine
+
+When evidence is approved for Control A:
+1. Walk all outbound `EQUIVALENT` edges from A (depth ≤ 2, configurable)
+2. For each reachable control B:
+   - If `requiresAdditionalEvidence = false` → mark B as partially satisfied, inherit evidence reference
+   - If `requiresAdditionalEvidence = true` → create a task: "Evidence from [source framework] satisfies base requirement — provide supplemental evidence for [target framework]'"
+   - If `isDetached = true` → skip (user broke this link intentionally)
+3. Log all propagation events in audit trail with `propagated_from: controlId`
+
+**Detach is permanent** — once a user detaches a mapping, evidence will never auto-propagate across that edge again unless manually re-linked.
+
+**Depth cap = 2** to prevent exponential propagation across deeply chained frameworks. Configurable via system settings.
+
+#### Layer 4 — AI Mapping Engine
+
+Multi-signal pipeline, run at framework ingestion time:
+
+| Signal | Weight | Description |
+|--------|--------|-------------|
+| NIST 800-53 anchor | 0.40 | Both controls share NIST refs → strong match |
+| SCF metaframework | 0.30 | Both controls appear in same SCF row |
+| User crosswalk file | 1.00 | User-provided mapping file → ground truth override |
+| LLM semantic | 0.20 | Embedding cosine similarity on control text |
+| ID pattern matching | 0.10 | Decoded HITRUST/ISO/NIST ID patterns |
+
+Final `confidenceScore` = weighted sum, capped at 1.0. User crosswalk = instant 1.0 override, bypasses all other signals.
+
+### Framework-Specific ID Decoding Rules
+
+#### HITRUST CSF
+
+HITRUST control IDs encode ISO 27001 section numbers:
+
+```
+0201.09j1Organizational.124
+├── 02 = Control Category (02 = Endpoint Protection)
+├── 01 = Control number within category
+├── 09j = ISO 27001 section 9.j (A.9.4 – System and Application Access)
+├── 1 = Control level (1/2/3 = broad/medium/specific)
+├── Organizational = Control type
+└── .124 = Sub-requirement index
+```
+
+**HITRUST decode algorithm:**
+1. Extract ISO 27001 section from characters 5-7 (e.g. `09j`)
+2. Map ISO 27001 section → NIST 800-53 refs via ISO↔NIST crosswalk table
+3. Tag `nist80053Refs` accordingly
+4. Cross-check with SCF lookup for confidence boost
+
+**ISO 27001 → NIST 800-53 crosswalk** is stored as a static lookup table in `lib/mapping/crosswalks/iso27001-nist80053.json`.
+
+#### ARC-AMPE (CMS)
+
+ARC-AMPE reuses NIST 800-53 control IDs **verbatim** — but every control has CMS-specific supplemental requirements on top of the base NIST control.
+
+**Critical rule: Same ID ≠ Equivalent**
+- ARC-AMPE `AC-2` is NOT equivalent to NIST `AC-2`
+- ARC-AMPE `AC-2` SUBSUMES NIST `AC-2` (base + CMS additions)
+- Evidence satisfying NIST `AC-2` satisfies ARC-AMPE `AC-2` **partially only**
+- `requiresAdditionalEvidence = true` on ALL ARC-AMPE target edges
+- ARC-AMPE controls always need a supplemental evidence task generated
+
+This is the root of the HITRUST/ARC-AMPE confusion the user flagged — even when IDs match exactly, ARC-AMPE always demands more.
+
+#### NIST CSF 2.0
+
+NIST CSF 2.0 uses a function.category.subcategory structure (`GV.OC-01`, `PR.AA-01`, etc.). NIST provides an official CSF↔800-53 crosswalk Excel file — this is loaded at startup as a static mapping table.
+
+### Framework Upload Pipeline
+
+Users can upload their own framework control sets when the framework is not publicly downloadable.
+
+**Supported input formats:**
+- `xlsx` — Excel spreadsheet (most common: NIST 800-53 catalog, ARC-AMPE, HITRUST summary)
+- `csv` — Comma-separated values
+- `json` — Pre-structured JSON array of controls
+- `pdf` — PDF with tabular data (OCR + table extraction via `pdf-parse`)
+
+**Ingestion flow:**
+1. User uploads file at `/frameworks/upload`
+2. Column mapper UI presents detected columns → user maps to: `controlId`, `title`, `description`, `guidance`, `nistRefs`, `category`
+3. User confirms mapping, clicks "Ingest"
+4. Background job normalizes rows → inserts into `controls` table with `frameworkId`
+5. Mapping engine runs automatically on all newly ingested controls
+6. User sees progress indicator; framework appears in the library when complete
+
+**Auto-parsers for known formats** (skip column mapper, parse directly):
+- NIST 800-53 Rev 5 Excel from csrc.nist.gov
+- ARC-AMPE v2 xlsx from cms.gov
+- NIST CSF 2.0 Excel + JSON from nist.gov
+- HITRUST PDF summary (best-effort; full HITRUST requires license and manual download)
+
+### Source Files (to be created in Phase 1)
+
+```
+lib/mapping/
+├── engine.ts              # Main MappingEngine class
+├── signals/
+│   ├── nist-anchor.ts     # NIST 800-53 anchor signal
+│   ├── scf-lookup.ts      # SCF metaframework lookup
+│   ├── llm-semantic.ts    # LLM embedding similarity
+│   ├── id-pattern.ts      # HITRUST/ISO/NIST ID decoder
+│   └── user-crosswalk.ts  # User-uploaded crosswalk override
+├── crosswalks/
+│   ├── iso27001-nist80053.json    # Static ISO 27001 ↔ NIST 800-53 map
+│   ├── csf20-nist80053.json       # NIST CSF 2.0 ↔ 800-53 (official NIST file)
+│   └── scf-master.json            # SCF metaframework (from securecontrolsframework.com)
+├── evidence-inheritance.ts        # Layer 3 propagation engine
+├── detach.ts                      # Permanent detach logic
+└── upload/
+    ├── parser.ts          # Format detection + dispatch
+    ├── xlsx-parser.ts     # Excel parser
+    ├── csv-parser.ts      # CSV parser
+    ├── json-parser.ts     # JSON parser
+    └── pdf-parser.ts      # PDF table extractor
+```
+
+---
+
+## 15. Development Progress Tracker
+
+### Phase 0 — Foundation & Repo Setup (✅ COMPLETE — May 3, 2026)
+- [x] 0.1 GitHub repo created (saichand04/compliguard-v2, private)
+- [x] 0.2 CONTEXT.md written (1,100+ lines)
+- [x] 0.3 TypeScript build clean — 33/33 static pages, all API routes compile
+- [x] 0.4 Schema extended: frameworks table + authority, website, logoUrl, controls columns
+- [x] 0.5 Proxy (Next.js 16 middleware) — JWT auth + setup cookie gating
+- [x] 0.6 Setup wizard — 9-step flow at /setup/*, re-invokable from Settings
+- [x] 0.7 Controls mapping engine architecture designed + documented
+- [ ] 0.8 Tests + CI (deferred to Phase 1)
+- [ ] 0.9 Logging + Sentry (deferred to Phase 1)
 
 _(Phases 1–7 tracked above in Section 5)_
 
