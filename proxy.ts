@@ -5,6 +5,7 @@ import { jwtVerify } from 'jose'
 
 /** Paths that are always accessible without auth or setup check */
 const PUBLIC_PATHS = [
+  '/',         // Landing page — always public
   '/setup',
   '/api/setup',
   '/signin',
@@ -14,13 +15,17 @@ const PUBLIC_PATHS = [
   '/api/inbound-email',
   '/api/teams-bot',
   '/api/auth',
+  '/api/health',
   '/_next',
   '/favicon.ico',
   '/mcp-manifest.json',
 ]
 
 function isPublicPath(pathname: string): boolean {
-  return PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+  // Exact match for root landing page
+  if (pathname === '/') return true
+  // Prefix match for all other public paths
+  return PUBLIC_PATHS.filter(p => p !== '/').some((p) => pathname.startsWith(p))
 }
 
 async function verifyJwt(token: string): Promise<boolean> {

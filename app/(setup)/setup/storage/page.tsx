@@ -73,6 +73,8 @@ export default function StorageSetupPage() {
         onBack={() => router.push('/setup/email')}
         onNext={handleNext}
         loading={loading}
+        skipLabel="Skip for now"
+        onSkip={() => router.push('/setup/ai')}
       >
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-2">

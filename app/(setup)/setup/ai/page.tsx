@@ -63,6 +63,8 @@ export default function AIProviderPage() {
         onBack={() => router.push('/setup/storage')}
         onNext={handleNext}
         loading={loading}
+        skipLabel="Skip for now"
+        onSkip={() => router.push('/setup/integrations')}
       >
         <div className="space-y-4">
           <div>

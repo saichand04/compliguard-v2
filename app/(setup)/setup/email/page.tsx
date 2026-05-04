@@ -70,6 +70,8 @@ export default function EmailSetupPage() {
         onBack={() => router.push('/setup/users')}
         onNext={handleNext}
         loading={loading}
+        skipLabel="Skip for now"
+        onSkip={() => router.push('/setup/storage')}
       >
         <div className="space-y-4">
           <div>

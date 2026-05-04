@@ -93,7 +93,7 @@ export default function IntegrationsPage() {
         onBack={() => router.push('/setup/ai')}
         onNext={handleNext}
         loading={loading}
-        skipLabel="Skip all for now"
+        skipLabel="Skip for now"
         onSkip={() => router.push('/setup/review')}
       >
         <div className="space-y-3">
