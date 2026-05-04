@@ -745,3 +745,133 @@ lib/email/templates/                           → Email HTML templates (2.13)
 - `566a69e` — feat: upgrade NIST seed — 243 controls, onConflictDoUpdate idempotent
 - `2922f6c` — feat: Phase 2 — Operational Backbone (2.1–2.15)
 - `5560de5` — feat: AI settings — add Claude + Ollama (local) provider support
+- `0fb6dc1` — feat: Phase 3+4+5 — Integrations, Microsoft Deep, Platform Completeness (186 files, 41,651 insertions)
+
+## Phase 3 — Completion Log (2026-05-04)
+
+### 3.1 GitHub Integration (`lib/integrations/github.ts`)
+- 10 checks: branch protection, secret scanning, Dependabot, code scanning, required reviews, stale deploy keys, 2FA, admin count, public repos, Actions token permissions
+- Routes: GET/POST/DELETE config, /scan, /test
+- Auto-creates findings + evidence for failures
+
+### 3.2 AWS Integration (`lib/integrations/aws.ts`)
+- 40 checks: IAM/S3/CloudTrail/Config/GuardDuty/SecurityHub/VPC/EC2/RDS/KMS/CloudWatch/ACM/Route53/EKS/Lambda
+- Lightweight SigV4 signer using Web Crypto API (no AWS SDK)
+- Routes: GET/POST/DELETE config, /scan, /test (STS GetCallerIdentity)
+
+### 3.3 Azure Integration (`lib/integrations/azure.ts`)
+- 31 checks across AKS/AppService/Entra/KeyVault/SQL/Storage/VM
+- OAuth2 client_credentials flow via ARM + Microsoft Graph
+
+### 3.4 GCP Integration (`lib/integrations/gcp.ts`)
+- 36 checks via Google Cloud REST APIs
+- RS256 JWT signing using Web Crypto API (RSASSA-PKCS1-v1_5)
+
+### 3.5 Slack Integration (`lib/integrations/slack.ts`)
+- Block Kit rich messages, HMAC-SHA256 signature verification
+- Per-type channels, notification preferences, slash commands (/compliguard)
+
+### 3.6 Jira Integration (`lib/integrations/jira.ts`)
+- ADF format issue creation, bidirectional status sync
+- Per-finding push, jiraIssueKey stored in findings.metadata
+
+### 3.7 NL Tests (`lib/integrations/nl-tests.ts`)
+- 10 test types: SSL, port_scan, DNS, headers, cert_expiry, TLS, CORS, redirect, response_code, ai_custom
+- Scheduler, scan-all orchestrator, integrations hub page
+
+## Phase 4 — Completion Log (2026-05-04)
+
+### 4.1 Entra ID Deep (`lib/microsoft/entra.ts`)
+- 20 checks: MFA registration/enforcement, Conditional Access, privileged roles (PIM), users/groups, sign-in risk
+- Shared `lib/microsoft/graph.ts` with auto-pagination
+
+### 4.2 Intune (`lib/microsoft/intune.ts`)
+- 19 checks: device compliance rate, BitLocker (>80%), MAM policies, OS versions (Win11/iOS16/Android12/macOS13), config profiles
+- SVG compliance gauges, non-compliant device tables with "Create Finding"
+
+### 4.3 Defender for Cloud/XDR (`lib/microsoft/defender.ts`)
+- 19 checks: Secure Score, recommendations, alerts, XDR incidents, coverage
+- Stored as type='azure' with subType='defender' to work around enum
+
+### 4.4 Azure Sentinel (`lib/microsoft/sentinel.ts`)
+- 20 checks: incidents, analytics rules, watchlists, data connectors, threat intel
+- MITRE tactic chips, ingest-incidents → findings, audit trail
+
+### 4.5 Microsoft Purview (`lib/microsoft/purview.ts`)
+- 15 checks: DLP policies, sensitivity labels, sensitive data types, audit logging
+- Graph Beta APIs, NIST control badges
+
+### 4.6 Compliance Manager (`lib/microsoft/compliance-manager.ts`)
+- Score sync, improvement actions → tasks (deduped by metadata), NIST control mapping
+- Radial score gauge with dynamic color
+
+### 4.7 Azure Compliance Scanner (`lib/microsoft/azure-compliance-scanner.ts`)
+- Parallel orchestrator: Entra + Defender + Purview + Compliance Manager
+- AI remediation summary, async scan + polling via /status
+- 10-entry scan history, JSON export, schedule modal
+
+## Phase 5 — Completion Log (2026-05-04)
+
+### 5.1 Pentest Module (`lib/pentest/`)
+- 15 built-in tests: SSL/TLS, DNS, HTTP headers, HTTP checks
+- AI test planner (OpenAI/Anthropic/Ollama), HTML report with AI executive summary
+- Credit system (admin grant), live progress banner polling every 5s
+- Routes: sessions, generate-plan, credits
+
+### 5.2 Public API v1 + API Keys + Webhooks
+- 15 REST routes under /api/v1/* with { success, data, meta } envelope
+- `lib/api/api-key-auth.ts`: SHA-256 key validation, scope matching, cgk_ prefix
+- `lib/webhooks/dispatcher.ts`: HMAC-SHA256, 3-attempt exponential backoff, per-delivery tracking
+- UI: API Keys page (scoped keys, one-time reveal modal), Webhooks page (test ping, retry delivery)
+
+### 5.3 Self-Hosted Edition
+- `docker-compose.yml`: app + postgres + redis + minio + nginx (5 services)
+- `Dockerfile`: multi-stage base→deps→builder→runner + development target
+- `systemd/compliguard.service`: hardened unit (NoNewPrivileges, ProtectSystem=strict)
+- `scripts/install.sh`: full Ubuntu/Debian installer
+- `scripts/backup.sh`: pg_dump + S3/MinIO upload, 30-day retention
+- `scripts/update.sh`: backup→pull→build→migrate→restart
+- `README-SELFHOST.md`: 630-line deployment guide
+
+### 5.4 Sentinel/Defender XDR Advanced
+- `lib/microsoft/sentinel-relay.ts`: polling bridge, lastPollTime per-org in systemSettings.extraConfig
+- `lib/microsoft/mitre.ts`: 50+ technique map, tactic→NIST mapping
+- `lib/microsoft/threat-intel.ts`: STIX pattern parsing, IoC detection
+- `components/dashboard/xdr-ticker.tsx`: SSE-powered live ticker (slide-in animation, severity badges)
+- XDR Advanced page: MITRE heatmap, TI panel, enriched audit trail, findings table
+
+### 5.7 Security Training (`lib/db/schema/training.ts`)
+- 6 modules: Security Awareness, GDPR, SOC 2, Phishing, Access Control, Incident Response
+- Quiz engine (5 questions per module), pass/fail modal, certificate ID generation
+- Stats: totalModules, completedModules, passRate, avgScore
+- UI: module grid, 3-tab player (Learn/Assessment/Certificate), completions table
+
+### 5.8 Knowledge Base (`lib/knowledge/`)
+- 20 GRC articles seeded across frameworks/controls/compliance/security/operations
+- `lib/knowledge/search.ts`: cosine similarity, ILIKE text search, hybrid 60/40 merge
+- `lib/knowledge/embeddings.ts`: OpenAI text-embedding-3-small, silent no-op for other providers
+- UI: category filter pills, debounced search, admin embedding generation
+
+### 5.9 Microsoft Teams Bot (`lib/teams/`)
+- Bot Framework via HTTP (fetch only, no botbuilder dependency)
+- OAuth2 client_credentials token with in-memory cache
+- Adaptive cards: finding (severity-colored), compliance alert, incident, welcome, help
+- Commands: /status, /findings, /help
+- `public/teams-manifest/manifest.json`: v1.16 with scopes, commands
+- Settings UI: 5-section config (credentials, status, conversations, notifications, setup guide)
+
+## TypeScript Fixes Applied (Phase 3+4+5)
+1. `session.organizationId` → `session.orgId!` (SessionPayload uses orgId, not organizationId)
+2. `PentestSessionMetadata` missing `scanType` field → added `scanType: string = 'builtin'` param
+3. `WebhookPayload` cast → added `[key: string]: unknown` index signature
+4. `SentinelCheckResult` missing `score?` field → added optional field
+5. `entry.after.severity` ReactNode → wrapped in `!!(...)` boolean coercion
+6. `entry.after.tactics` → cast via `Record<string, unknown>`
+7. Knowledge page `Date` vs `string` → serialize `createdAt`/`updatedAt` with `.toISOString()`
+8. XDR-advanced SSE status event cast → `as unknown as { type: string; connected: boolean }`
+
+## Deployment Log
+- Committed: `0fb6dc1` (186 files, +41,651 lines)
+- Pushed: `main` branch → GitHub
+- Deployed: tar → pc push → Mac extract → npm install → restart (rm -rf .next)
+- Confirmed running: http://localhost:3030 (Turbopack, Ready in 264ms)
