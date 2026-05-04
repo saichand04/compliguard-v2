@@ -1,7 +1,7 @@
 import { getSession } from '@/lib/auth/jwt'
 import { redirect } from 'next/navigation'
-import { StatsCard } from '@/components/dashboard/stats-card'
 import { FrameworkProgressCard } from '@/components/dashboard/framework-progress-card'
+import { DraggableStatsGrid } from '@/components/dashboard/draggable-stats-grid'
 import {
   Shield, CheckSquare, AlertTriangle, FileText,
   Link2, TrendingUp, Activity, Clock, ArrowRight,
@@ -70,17 +70,8 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      {/* ── KPI Stats row ─────────────────────────────────── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-        gap: 14,
-        marginBottom: 24,
-      }}>
-        {STATS.map((stat, i) => (
-          <StatsCard key={i} {...stat} delay={i * 60} />
-        ))}
-      </div>
+      {/* ── KPI Stats row — draggable ───────────────────── */}
+      <DraggableStatsGrid stats={STATS} />
 
       {/* ── Main content grid ─────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, marginBottom: 20 }}>

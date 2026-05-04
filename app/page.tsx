@@ -79,7 +79,7 @@ export default function LandingPage() {
         backdropFilter: scrolled ? 'blur(20px)' : 'none',
         borderBottom: scrolled ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
       }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '0 40px', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
 
           {/* Logo */}
           <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
@@ -183,12 +183,12 @@ export default function LandingPage() {
           {/* Headline */}
           <h1 style={{
             fontFamily: "'Playfair Display', serif",
-            fontSize: 'clamp(40px, 6vw, 72px)',
+            fontSize: 'clamp(52px, 8vw, 96px)',
             fontWeight: 700,
             color: 'var(--text-primary)',
-            lineHeight: 1.1,
+            lineHeight: 1.05,
             letterSpacing: '-0.03em',
-            marginBottom: 24,
+            marginBottom: 28,
           }}>
             AI-Powered{' '}
             <span style={{
@@ -203,11 +203,11 @@ export default function LandingPage() {
 
           {/* Subheadline */}
           <p style={{
-            fontSize: 'clamp(16px, 2vw, 20px)',
+            fontSize: 'clamp(18px, 2.4vw, 24px)',
             color: 'var(--text-secondary)',
-            lineHeight: 1.7,
-            maxWidth: 640,
-            margin: '0 auto 40px',
+            lineHeight: 1.65,
+            maxWidth: 760,
+            margin: '0 auto 48px',
           }}>
             Streamline your compliance journey for ISO 27001, SOC 2, HIPAA, HITRUST, FERPA, and more.
             Automate evidence collection, continuous monitoring, and certification management.
@@ -243,8 +243,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── Stats bar ────────────────────────────────────────────────────── */}
-      <section style={{ position: 'relative', zIndex: 1, padding: '0 24px 80px' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <section style={{ position: 'relative', zIndex: 1, padding: '0 40px 80px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
             background: 'rgba(255,255,255,0.03)',
@@ -271,8 +271,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── Features ─────────────────────────────────────────────────────── */}
-      <section id="features" style={{ position: 'relative', zIndex: 1, padding: '60px 24px 100px' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <section id="features" style={{ position: 'relative', zIndex: 1, padding: '60px 40px 100px' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
 
           {/* Section header */}
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
@@ -377,8 +377,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── Frameworks ───────────────────────────────────────────────────── */}
-      <section id="frameworks" style={{ position: 'relative', zIndex: 1, padding: '60px 24px 100px' }}>
-        <div style={{ maxWidth: 1000, margin: '0 auto', textAlign: 'center' }}>
+      <section id="frameworks" style={{ position: 'relative', zIndex: 1, padding: '60px 40px 100px' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto', textAlign: 'center' }}>
           <h2 style={{
             fontFamily: "'Playfair Display', serif",
             fontSize: 'clamp(26px, 4vw, 40px)', fontWeight: 700,
@@ -417,8 +417,8 @@ export default function LandingPage() {
       </section>
 
       {/* ── CTA Banner ───────────────────────────────────────────────────── */}
-      <section style={{ position: 'relative', zIndex: 1, padding: '0 24px 100px' }}>
-        <div style={{ maxWidth: 900, margin: '0 auto' }}>
+      <section style={{ position: 'relative', zIndex: 1, padding: '0 40px 100px' }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto' }}>
           <div style={{
             borderRadius: 24, padding: '64px 48px', textAlign: 'center',
             background: 'linear-gradient(135deg, rgba(139,92,246,0.25) 0%, rgba(109,40,217,0.35) 50%, rgba(6,182,212,0.15) 100%)',
@@ -472,9 +472,9 @@ export default function LandingPage() {
       <footer style={{
         position: 'relative', zIndex: 1,
         borderTop: '1px solid rgba(255,255,255,0.07)',
-        padding: '60px 24px 40px',
+        padding: '60px 40px 40px',
       }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+        <div style={{ maxWidth: 1400, margin: '0 auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', gap: 48, marginBottom: 48 }} className="footer-grid">
 
             {/* Brand */}

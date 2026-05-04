@@ -107,11 +107,12 @@ export function DashboardSidebar({ role }: SidebarProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: collapsed && !isMobile ? '18px 0' : '18px 16px',
+        padding: collapsed && !isMobile ? '0' : '0 16px',
         justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
         borderBottom: '1px solid var(--border-glass)',
         flexShrink: 0,
-        minHeight: 64,
+        height: 56,
+        minHeight: 56,
       }}>
         <div style={{
           width: 30,
