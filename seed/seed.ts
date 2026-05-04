@@ -13,6 +13,7 @@ import { fileURLToPath } from "url"
 
 import { frameworks } from "../lib/db/schema/frameworks"
 import { systemSettings } from "../lib/db/schema/system_settings"
+import { seedScfCrosswalk } from "./seed-scf"
 
 // ── Bootstrap ────────────────────────────────────────────
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -164,6 +165,7 @@ async function main(): Promise<void> {
     // Seed in order
     await seedSystemSettings()
     await seedFrameworks(frameworkData)
+    await seedScfCrosswalk(db)
 
     console.timeEnd("seed-duration")
     log("Seed complete!")

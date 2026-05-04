@@ -2,6 +2,23 @@ import { pgTable, uuid, varchar, text, boolean, timestamp, integer, jsonb, pgEnu
 import { organizations } from './organizations'
 import { users } from './users'
 
+// Extended mapping type + source enums (used in controlMappings)
+// Note: canonical enums live in mapping_engine.ts; these are inline for this table
+// to avoid circular imports at schema layer.
+export const controlMappingTypeEnum = pgEnum('control_mapping_type', [
+  'direct',
+  'partial',
+  'related',
+  'inferred',
+])
+
+export const controlMappingSourceEnum = pgEnum('control_mapping_source', [
+  'builtin',
+  'scf',
+  'ai',
+  'user',
+])
+
 export const controlStatusEnum = pgEnum('control_status', [
   'not_started',
   'in_progress',
@@ -84,7 +101,14 @@ export const controlMappings = pgTable('control_mappings', {
   mappingRationale: text('mapping_rationale'),
   confidence: integer('confidence').default(0), // 0-100
   mappedByAi: boolean('mapped_by_ai').default(false),
+  // Phase 1 additions — Mapping Engine columns
+  mappingType: controlMappingTypeEnum('mapping_type').default('direct'),
+  source: controlMappingSourceEnum('source').default('builtin'),
+  isUserOverride: boolean('is_user_override').default(false),
+  // NIST canonical anchor — the NIST 800-53 Rev 5 ID that both controls resolve to
+  canonicalNistId: varchar('canonical_nist_id', { length: 50 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 })
 
 export const soaEntries = pgTable('soa_entries', {

@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Shield, CheckSquare, Link2, FileText, AlertTriangle,
   ScrollText, ClipboardList, Users2, Search, Bug, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
-  Zap, GitBranch,
+  Zap, GitBranch, Library, Map, Upload,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -21,11 +21,17 @@ const NAV_GROUPS = [
   {
     label: 'Compliance',
     items: [
-      { href: '/frameworks',     label: 'Frameworks',     icon: Shield },
-      { href: '/controls',       label: 'Controls',       icon: CheckSquare },
-      { href: '/control-mapping',label: 'Control Mapping',icon: Link2 },
-      { href: '/evidence',       label: 'Evidence',       icon: FileText },
-      { href: '/policies',       label: 'Policies',       icon: ScrollText },
+      { href: '/frameworks',        label: 'Frameworks',      icon: Shield },
+      { href: '/evidence',          label: 'Evidence',        icon: FileText },
+      { href: '/policies',          label: 'Policies',        icon: ScrollText },
+    ],
+  },
+  {
+    label: 'Controls',
+    items: [
+      { href: '/controls',          label: 'Controls Library',icon: Library },
+      { href: '/mappings',          label: 'Mapping Explorer',icon: Map },
+      { href: '/frameworks/upload', label: 'Upload Framework', icon: Upload },
     ],
   },
   {
