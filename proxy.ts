@@ -12,10 +12,15 @@ const PUBLIC_PATHS = [
   '/signup',
   '/forgot-password',
   '/trust',
+  '/upload',                            // Evidence request public upload pages
+  '/api/evidence-requests',             // Token-based evidence request upload (GET+POST, no auth)
   '/api/inbound-email',
+  '/api/webhooks/postmark/inbound',     // Postmark inbound webhook (HMAC-verified)
   '/api/teams-bot',
   '/api/auth',
   '/api/health',
+  '/questionnaire',
+  '/api/questionnaire-response',
   '/_next',
   '/favicon.ico',
   '/mcp-manifest.json',

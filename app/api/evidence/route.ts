@@ -4,10 +4,11 @@ import { evidence } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth, ApiErrors, writeAuditLog } from '@/lib/api/auth-helper'
 import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
-import { z } from 'zod'
+import { uploadEvidenceFile } from '@/lib/storage/upload-evidence'
 
 /**
- * GET /api/evidence?controlAssignmentId=&status=
+ * GET /api/evidence
+ * List evidence with optional filters: search, type, status, frameworkId, dateFrom, dateTo
  */
 export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
@@ -16,57 +17,50 @@ export async function GET(req: NextRequest) {
   if (!session.orgId) return ApiErrors.forbidden()
 
   const { searchParams } = req.nextUrl
-  const controlAssignmentId = searchParams.get('controlAssignmentId')
-  const status = searchParams.get('status')
+  const search = searchParams.get('search') || ''
+  const type = searchParams.get('type') || ''
+  const status = searchParams.get('status') || ''
+  const dateFrom = searchParams.get('dateFrom') || ''
+  const dateTo = searchParams.get('dateTo') || ''
 
   const records = await db
     .select()
     .from(evidence)
     .where(eq(evidence.organizationId, session.orgId))
-    .limit(100)
+    .orderBy(evidence.createdAt)
+    .limit(200)
 
-  const filtered = records.filter((e) => {
-    if (controlAssignmentId && e.controlAssignmentId !== controlAssignmentId) return false
-    if (status && e.status !== status) return false
+  const now = new Date()
+  const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+
+  const filtered = records.filter((r) => {
+    if (search) {
+      const s = search.toLowerCase()
+      if (!r.title.toLowerCase().includes(s) && !(r.description?.toLowerCase().includes(s))) return false
+    }
+    if (type && r.evidenceType !== type) return false
+    if (status && r.status !== status) return false
+    if (dateFrom && r.createdAt < new Date(dateFrom)) return false
+    if (dateTo && r.createdAt > new Date(dateTo)) return false
     return true
   })
 
-  // Generate signed URLs for each record if it has a storage key
-  const withUrls = await Promise.all(
-    filtered.map(async (record) => {
-      if (!record.storageKey) return { ...record, downloadUrl: null }
+  const stats = {
+    total: records.length,
+    pendingReview: records.filter((r) => r.status === 'pending').length,
+    approved: records.filter((r) => r.status === 'approved').length,
+    expiringSoon: records.filter((r) => {
+      if (!r.expiresAt) return false
+      return r.expiresAt > now && r.expiresAt <= thirtyDays
+    }).length,
+  }
 
-      try {
-        const { getStorageProvider } = await import('@/lib/storage')
-        const provider = getStorageProvider()
-        const downloadUrl = await provider.getSignedUrl(record.storageKey, 3600, session.orgId!)
-        return { ...record, downloadUrl }
-      } catch {
-        return { ...record, downloadUrl: null }
-      }
-    })
-  )
-
-  return NextResponse.json({ evidence: withUrls, total: withUrls.length })
+  return NextResponse.json({ evidence: filtered, total: filtered.length, stats })
 }
-
-const createEvidenceSchema = z.object({
-  controlAssignmentId: z.string().uuid().optional(),
-  title: z.string().min(1),
-  description: z.string().optional(),
-  evidenceType: z.enum(['screenshot', 'document', 'log', 'automated', 'text', 'video', 'configuration']),
-  storageKey: z.string().optional(),
-  storageProvider: z.string().optional(),
-  storageBucket: z.string().optional(),
-  fileName: z.string().optional(),
-  fileSize: z.number().optional(),
-  mimeType: z.string().optional(),
-  textContent: z.string().optional(),
-})
 
 /**
  * POST /api/evidence
- * Create an evidence record after the file has already been uploaded via /api/evidence/upload.
+ * Create evidence with optional file upload via multipart/form-data
  */
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
@@ -74,23 +68,84 @@ export async function POST(req: NextRequest) {
   if (!hasPermission(session.role, PERMISSIONS.UPLOAD_EVIDENCE)) return ApiErrors.forbidden()
   if (!session.orgId) return ApiErrors.forbidden()
 
-  let body: unknown
-  try {
-    body = await req.json()
-  } catch {
-    return ApiErrors.badRequest('Invalid JSON body')
+  let title: string
+  let description: string | undefined
+  let evidenceTypeVal: string
+  let expiresAt: string | undefined
+  let controlAssignmentId: string | undefined
+  let notes: string | undefined
+  let fileName: string | undefined
+  let fileSize: number | undefined
+  let mimeType: string | undefined
+  let storageKey: string | undefined
+  let storageProvider: string | undefined
+
+  const contentType = req.headers.get('content-type') || ''
+
+  if (contentType.includes('multipart/form-data')) {
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch {
+      return ApiErrors.badRequest('Invalid form data')
+    }
+
+    title = formData.get('title') as string
+    description = formData.get('description') as string | undefined
+    evidenceTypeVal = (formData.get('evidenceType') as string) || 'document'
+    expiresAt = formData.get('expiresAt') as string | undefined
+    controlAssignmentId = formData.get('controlAssignmentId') as string | undefined
+    notes = formData.get('notes') as string | undefined
+
+    const file = formData.get('file') as File | null
+    if (file && file.size > 0) {
+      const arrayBuffer = await file.arrayBuffer()
+      const buffer = Buffer.from(arrayBuffer)
+      const { key } = await uploadEvidenceFile(buffer, file.name, file.type, session.orgId)
+
+      fileName = file.name
+      fileSize = file.size
+      mimeType = file.type
+      storageKey = key
+      storageProvider = 'pluggable'
+    }
+  } else {
+    let body: Record<string, unknown>
+    try {
+      body = await req.json()
+    } catch {
+      return ApiErrors.badRequest('Invalid JSON body')
+    }
+    title = body.title as string
+    description = body.description as string | undefined
+    evidenceTypeVal = (body.evidenceType as string) || 'document'
+    expiresAt = body.expiresAt as string | undefined
+    controlAssignmentId = body.controlAssignmentId as string | undefined
+    notes = body.notes as string | undefined
   }
 
-  const result = createEvidenceSchema.safeParse(body)
-  if (!result.success) {
-    return ApiErrors.badRequest(result.error.issues[0].message)
+  if (!title) return ApiErrors.badRequest('Title is required')
+
+  const validTypes = ['screenshot', 'document', 'log', 'automated', 'text', 'video', 'configuration']
+  if (!validTypes.includes(evidenceTypeVal)) {
+    evidenceTypeVal = 'document'
   }
 
   const [record] = await db.insert(evidence).values({
-    ...result.data,
     organizationId: session.orgId,
-    uploadedBy: session.userId,
+    title,
+    description: description || undefined,
+    evidenceType: evidenceTypeVal as 'screenshot' | 'document' | 'log' | 'automated' | 'text' | 'video' | 'configuration',
     status: 'pending',
+    uploadedBy: session.userId || undefined,
+    expiresAt: expiresAt ? new Date(expiresAt) : undefined,
+    controlAssignmentId: controlAssignmentId || undefined,
+    fileName: fileName || undefined,
+    fileSize: fileSize || undefined,
+    mimeType: mimeType || undefined,
+    storageKey: storageKey || undefined,
+    storageProvider: storageProvider || undefined,
+    metadata: notes ? { notes } : undefined,
   }).returning()
 
   await writeAuditLog({

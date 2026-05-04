@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth/jwt'
 import { redirect } from 'next/navigation'
 import { DashboardSidebar } from '@/components/dashboard/sidebar'
 import { DashboardHeader } from '@/components/dashboard/header'
+import { ChatWidget } from '@/components/ai/chat-widget'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession()
@@ -34,6 +35,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           {children}
         </main>
       </div>
+      <ChatWidget />
     </div>
   )
 }

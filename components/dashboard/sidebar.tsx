@@ -6,7 +6,7 @@ import {
   LayoutDashboard, Shield, FileText, AlertTriangle,
   ScrollText, ClipboardList, Users2, Search, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
-  Zap, Library, Map, Upload, Bell, FileCheck, Eye,
+  Zap, Library, Map, Upload, Bell, FileCheck, Eye, GitBranch, ShieldCheck, Sparkles, Brain, Calendar,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -23,6 +23,7 @@ const NAV_GROUPS = [
     label: 'Compliance',
     items: [
       { href: '/frameworks',        label: 'Frameworks',       icon: Shield },
+      { href: '/roadmap',           label: 'Roadmap',          icon: Calendar },
       { href: '/evidence',          label: 'Evidence',         icon: FileText },
       { href: '/policies',          label: 'Policies',         icon: ScrollText },
       { href: '/soa',               label: 'Statement of App', icon: FileCheck },
@@ -48,15 +49,24 @@ const NAV_GROUPS = [
   {
     label: 'Organization',
     items: [
-      { href: '/vendors', label: 'Vendors', icon: Users2 },
-      { href: '/people',  label: 'People',  icon: UsersRound },
+      { href: '/vendors',   label: 'Vendors',    icon: Users2 },
+      { href: '/people',    label: 'People',     icon: UsersRound },
+      { href: '/org-chart', label: 'Org Chart',  icon: GitBranch },
+    ],
+  },
+  {
+    label: 'AI',
+    items: [
+      { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
+      { href: '/context-hub',  label: 'Context Hub',  icon: Brain },
     ],
   },
   {
     label: 'Platform',
     items: [
-      { href: '/integrations', label: 'Integrations', icon: Plug },
-      { href: '/settings',     label: 'Settings',     icon: Settings },
+      { href: '/integrations',   label: 'Integrations', icon: Plug },
+      { href: '/settings',       label: 'Settings',     icon: Settings },
+      { href: '/settings/roles', label: 'Roles',        icon: ShieldCheck },
     ],
   },
 ]

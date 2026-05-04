@@ -2,6 +2,7 @@ import { getSession } from '@/lib/auth/jwt'
 import { redirect } from 'next/navigation'
 import { FrameworkProgressCard } from '@/components/dashboard/framework-progress-card'
 import { DraggableStatsGrid } from '@/components/dashboard/draggable-stats-grid'
+import { MyTasksWidget } from '@/components/dashboard/my-tasks-widget'
 import {
   Shield, CheckSquare, AlertTriangle, FileText,
   Link2, Activity, ArrowRight,
@@ -199,6 +200,9 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
+
+          {/* My Tasks widget */}
+          <MyTasksWidget />
 
         </div>
       </div>

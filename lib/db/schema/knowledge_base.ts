@@ -12,6 +12,7 @@ export const knowledgeBaseEntries = pgTable('knowledge_base_entries', {
   embedding: jsonb('embedding'), // vector stored as jsonb until pgvector is set up
   isPublic: boolean('is_public').default(false),
   isBuiltIn: boolean('is_built_in').default(false),
+  metadata: jsonb('metadata'),
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
