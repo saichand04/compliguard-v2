@@ -1,6 +1,6 @@
 export default function SetupLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative min-h-screen overflow-hidden" style={{ background: 'var(--bg-base)' }}>
+    <div className="relative min-h-screen overflow-x-hidden" style={{ background: 'var(--bg-base)' }}>
       {/* Ambient background */}
       <div className="cg-bg" />
 

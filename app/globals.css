@@ -103,7 +103,9 @@ body {
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  overflow: hidden;
+  /* overflow: hidden removed — was blocking scroll on landing page, setup wizard, and all non-dashboard pages.
+     The dashboard layout applies overflow:hidden on its own shell wrapper. */
+  overflow-x: hidden;
 }
 
 /* ── Ambient Background Glow ────────────────────────────────── */
