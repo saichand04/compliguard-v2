@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { Shield, ArrowRight, ChevronRight, Zap, Search, BarChart3, CheckCircle, Menu, X } from 'lucide-react'
+// CheckCircle is used in features checklist — already imported above
 
 const FRAMEWORKS = [
   'ISO 27001', 'SOC 2', 'HIPAA', 'HITRUST', 'FERPA', 'GDPR',
@@ -22,6 +23,7 @@ const FEATURES = [
     icon: Zap,
     tag: 'Automation',
     title: 'Automated Evidence Collection',
+    short: 'Connect to AWS, Azure, and more for automatic evidence pulls',
     description: 'Connect to AWS, Azure, Microsoft 365 and more for automatic evidence pulls. Eliminate manual screenshot-and-paste workflows forever.',
     gradient: 'from-violet-500/20 to-transparent',
   },
@@ -29,6 +31,7 @@ const FEATURES = [
     icon: Search,
     tag: 'AI Engine',
     title: 'AI-Powered Gap Detection',
+    short: 'Identify compliance gaps before auditors do',
     description: 'Identify compliance gaps before auditors do. Our 4-layer mapping engine cross-references NIST 800-53 as a universal anchor across all frameworks.',
     gradient: 'from-cyan-500/20 to-transparent',
   },
@@ -36,6 +39,7 @@ const FEATURES = [
     icon: BarChart3,
     tag: 'Visibility',
     title: 'Real-Time Dashboards',
+    short: 'Track progress across all frameworks in one place',
     description: 'Track progress across all frameworks in one unified view. Evidence collected once automatically populates all relevant control requirements.',
     gradient: 'from-violet-500/20 to-transparent',
   },
@@ -274,92 +278,102 @@ export default function LandingPage() {
       <section id="features" style={{ position: 'relative', zIndex: 1, padding: '60px 40px 100px' }}>
         <div style={{ maxWidth: 1400, margin: '0 auto' }}>
 
-          {/* Section header */}
-          <div style={{ textAlign: 'center', marginBottom: 64 }}>
-            <span style={{
-              display: 'inline-block', fontSize: 12, fontWeight: 600, letterSpacing: '0.1em',
-              textTransform: 'uppercase', color: '#8B5CF6', marginBottom: 14,
-            }}>Automation</span>
-            <h2 style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: 'clamp(28px, 4vw, 44px)', fontWeight: 700,
-              color: 'var(--text-primary)', letterSpacing: '-0.02em', marginBottom: 16,
-            }}>
-              Accelerate compliance.<br />Reduce manual work.
-            </h2>
-            <p style={{ fontSize: 16, color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto', lineHeight: 1.7 }}>
-              Our AI-powered platform automates evidence collection, control testing, and continuous monitoring.
-            </p>
-          </div>
-
-          {/* Feature cards row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }} className="features-grid">
-            {FEATURES.map((f, i) => (
-              <div key={i} style={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.07)',
-                borderRadius: 20, padding: '32px 28px',
-                backdropFilter: 'blur(20px)',
-                position: 'relative', overflow: 'hidden',
-                transition: 'all 0.3s ease',
-              }}
-                onMouseEnter={e => { e.currentTarget.style.border = '1px solid rgba(139,92,246,0.3)'; e.currentTarget.style.transform = 'translateY(-4px)' }}
-                onMouseLeave={e => { e.currentTarget.style.border = '1px solid rgba(255,255,255,0.07)'; e.currentTarget.style.transform = 'none' }}>
-                {/* Glow bg */}
-                <div style={{
-                  position: 'absolute', top: 0, left: 0, right: 0, height: 120,
-                  background: `linear-gradient(to bottom, ${i % 2 === 0 ? 'rgba(139,92,246,0.08)' : 'rgba(6,182,212,0.08)'}, transparent)`,
-                  pointerEvents: 'none',
-                }} />
-
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12, marginBottom: 20,
-                  background: i % 2 === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(6,182,212,0.15)',
-                  border: `1px solid ${i % 2 === 0 ? 'rgba(139,92,246,0.3)' : 'rgba(6,182,212,0.3)'}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <f.icon size={20} color={i % 2 === 0 ? '#8B5CF6' : '#06B6D4'} />
-                </div>
-
-                <span style={{
-                  fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-                  color: i % 2 === 0 ? '#8B5CF6' : '#06B6D4', marginBottom: 10, display: 'block',
-                }}>{f.tag}</span>
-
-                <h3 style={{
-                  fontFamily: "'Playfair Display', serif",
-                  fontSize: 18, fontWeight: 700, color: 'var(--text-primary)',
-                  letterSpacing: '-0.01em', marginBottom: 12,
-                }}>{f.title}</h3>
-
-                <p style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7 }}>{f.description}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Compliance progress mini-dashboard */}
+          {/* 2-column split: left = copy + checklist, right = progress panel */}
           <div style={{
-            marginTop: 48,
-            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
-            borderRadius: 20, padding: '32px 36px',
-            backdropFilter: 'blur(20px)',
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-              <h3 style={{ fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>
-                Compliance Progress
-              </h3>
-              <span style={{
-                fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-                color: '#06B6D4', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)',
-                padding: '3px 10px', borderRadius: 100,
-              }}>Live Dashboard</span>
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: 64,
+            alignItems: 'center',
+          }} className="features-split">
+
+            {/* ── Left column ── */}
+            <div>
+              {/* Tag */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                <Zap size={14} style={{ color: '#8B5CF6' }} />
+                <span style={{
+                  fontSize: 13, fontWeight: 600, letterSpacing: '0.06em',
+                  textTransform: 'uppercase', color: '#8B5CF6',
+                }}>Automation</span>
+              </div>
+
+              {/* Headline */}
+              <h2 style={{
+                fontFamily: "'Playfair Display', serif",
+                fontSize: 'clamp(30px, 4vw, 48px)', fontWeight: 700,
+                color: 'var(--text-primary)', letterSpacing: '-0.02em',
+                lineHeight: 1.1, marginBottom: 20,
+              }}>
+                Accelerate compliance.<br />Reduce manual work.
+              </h2>
+
+              {/* Sub-copy */}
+              <p style={{ fontSize: 16, color: 'var(--text-secondary)', lineHeight: 1.75, marginBottom: 36 }}>
+                Our AI-powered platform automates evidence collection, control testing,
+                and continuous monitoring. Focus on your business while we handle compliance complexity.
+              </p>
+
+              {/* Feature checklist */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {FEATURES.map((f, i) => (
+                  <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                    <div style={{
+                      width: 28, height: 28, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+                      background: i % 2 === 0 ? 'rgba(139,92,246,0.15)' : 'rgba(6,182,212,0.12)',
+                      border: `1.5px solid ${i % 2 === 0 ? 'rgba(139,92,246,0.5)' : 'rgba(6,182,212,0.5)'}`,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <CheckCircle size={14} color={i % 2 === 0 ? '#8B5CF6' : '#06B6D4'} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>
+                        {f.title}
+                      </div>
+                      <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                        {f.short}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {PROGRESS_ITEMS.map((item, i) => (
-                <div key={i}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{item.label}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: item.color }}>{item.pct}%</span>
+
+            {/* ── Right column: Compliance Progress panel ── */}
+            <div style={{
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 20,
+              padding: '32px 36px',
+              backdropFilter: 'blur(24px)',
+              position: 'relative',
+              overflow: 'hidden',
+            }}>
+              {/* Top glow */}
+              <div style={{
+                position: 'absolute', top: -60, right: -60, width: 200, height: 200,
+                background: 'radial-gradient(circle, rgba(139,92,246,0.18) 0%, transparent 70%)',
+                pointerEvents: 'none',
+              }} />
+
+              {/* Panel header */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                  Compliance Progress
+                </h3>
+                <span style={{ fontSize: 36, fontWeight: 700, letterSpacing: '-0.03em',
+                  background: 'linear-gradient(135deg, #8B5CF6, #06B6D4)',
+                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                }}>87%</span>
+              </div>
+
+              <div style={{ marginBottom: 28, height: 1, background: 'rgba(255,255,255,0.07)' }} />
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                {PROGRESS_ITEMS.map((item, i) => (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{item.label}</span>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: item.color }}>{item.pct}%</span>
                   </div>
                   <div style={{ height: 6, background: 'rgba(255,255,255,0.07)', borderRadius: 100, overflow: 'hidden' }}>
                     <div style={{
@@ -371,6 +385,7 @@ export default function LandingPage() {
                   </div>
                 </div>
               ))}
+              </div>
             </div>
           </div>
         </div>
@@ -549,6 +564,7 @@ export default function LandingPage() {
           .show-mobile { display: block !important; }
           .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
           .features-grid { grid-template-columns: 1fr !important; }
+          .features-split { grid-template-columns: 1fr !important; gap: 40px !important; }
           .footer-grid { grid-template-columns: 1fr 1fr !important; }
         }
         @media (min-width: 769px) {

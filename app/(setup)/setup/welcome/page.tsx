@@ -2,8 +2,9 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { WizardProgress } from '@/components/setup-wizard/wizard-progress'
-import { Server, Cloud, Monitor, ArrowRight, Loader2, Shield, CheckCircle2 } from 'lucide-react'
+import { Server, Cloud, Monitor, ArrowRight, Loader2, Shield, CheckCircle2, LayoutDashboard } from 'lucide-react'
 
 const WIZARD_STEPS = [
   { number: 1, label: 'Welcome' },
@@ -212,7 +213,35 @@ export default function WelcomePage() {
         </div>
 
         {/* Actions */}
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {/* Master skip — always available */}
+          <Link
+            href="/dashboard"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 7,
+              fontSize: 13, color: 'var(--text-muted)',
+              textDecoration: 'none',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-glass)',
+              background: 'transparent',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={(e: React.MouseEvent<HTMLAnchorElement>) => {
+              e.currentTarget.style.color = 'var(--text-secondary)'
+              e.currentTarget.style.borderColor = 'var(--border-glass-strong)'
+              e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+            }}
+            onMouseLeave={(e: React.MouseEvent<HTMLAnchorElement>) => {
+              e.currentTarget.style.color = 'var(--text-muted)'
+              e.currentTarget.style.borderColor = 'var(--border-glass)'
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            <LayoutDashboard size={13} />
+            Skip setup — Go to Dashboard
+          </Link>
+
           <button
             onClick={handleNext}
             disabled={loading}

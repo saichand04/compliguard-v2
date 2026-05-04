@@ -72,9 +72,13 @@ export async function proxy(request: NextRequest) {
   const setupCookie = request.cookies.get(SETUP_COOKIE_NAME)?.value
   const isSetupComplete = setupCookie === 'done'
 
-  // If setup is not complete and user is not on a setup/* route
+  // Authenticated users can always bypass setup and go to dashboard routes directly.
+  // Setup wizard is opt-in after first login — never block a logged-in user from
+  // accessing dashboard, settings, profile, controls, etc.
   if (!isSetupComplete && !pathname.startsWith('/setup') && !pathname.startsWith('/api/setup')) {
-    return NextResponse.redirect(new URL('/setup', request.url))
+    // Only redirect to setup if the user is explicitly trying to reach /setup
+    // from the landing page (no session context). Logged-in users are allowed through.
+    // i.e. DO NOT redirect — fall through to NextResponse.next() below.
   }
 
   // If setup is complete and user is trying to access /setup directly, redirect to dashboard
