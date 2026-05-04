@@ -1,0 +1,30 @@
+[Unit]
+Description=CompliGuard GRC Platform
+Documentation=https://github.com/saichand04/compliguard-v2
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=compliguard
+Group=compliguard
+WorkingDirectory=/opt/compliguard
+EnvironmentFile=/opt/compliguard/.env
+ExecStart=/usr/bin/node server.js
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=compliguard
+LimitNOFILE=65536
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/compliguard/data /tmp
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

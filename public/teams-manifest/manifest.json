@@ -1,0 +1,54 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.16",
+  "version": "1.0.0",
+  "id": "{{BOT_APP_ID}}",
+  "packageName": "com.compliguard.bot",
+  "developer": {
+    "name": "CompliGuard",
+    "websiteUrl": "https://your-domain.com",
+    "privacyUrl": "https://your-domain.com/privacy",
+    "termsOfUseUrl": "https://your-domain.com/terms"
+  },
+  "name": {
+    "short": "CompliGuard",
+    "full": "CompliGuard GRC Bot"
+  },
+  "description": {
+    "short": "GRC compliance notifications and status commands",
+    "full": "CompliGuard bot for real-time compliance alerts, finding notifications, and status queries directly in Microsoft Teams."
+  },
+  "icons": {
+    "color": "icon-color.png",
+    "outline": "icon-outline.png"
+  },
+  "accentColor": "#8B5CF6",
+  "bots": [
+    {
+      "botId": "{{BOT_APP_ID}}",
+      "scopes": ["personal", "team", "groupchat"],
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "team"],
+          "commands": [
+            {
+              "title": "status",
+              "description": "Get compliance status summary"
+            },
+            {
+              "title": "findings",
+              "description": "List top critical findings"
+            },
+            {
+              "title": "help",
+              "description": "Show available commands"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": ["your-domain.com"]
+}

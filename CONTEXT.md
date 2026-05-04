@@ -552,3 +552,196 @@ lib/email/templates/                           → Email HTML templates (2.13)
 ---
 
 *This file is automatically updated at the start of each session. Always update before committing.*
+
+---
+
+## 13. Phase 3 — Integrations & Automation (IN PROGRESS)
+
+**Status**: 🔄 Building — launched 2026-05-04  
+**Commit baseline**: `5560de5`
+
+### 3.1 GitHub Integration
+- Connect via GitHub App or Personal Access Token
+- Checks: branch protection rules, secret scanning alerts, dependabot alerts, code scanning alerts, required reviews
+- Results → findings (severity mapped from GitHub alert severity)
+- Evidence: export scan results as evidence records
+- DB: `integrations` (type='github'), `integrationScanResults`
+
+### 3.2 AWS Integration
+- Connect via IAM Role ARN (cross-account assume role) or Access Key
+- 40+ checks across: IAM (MFA, root usage, key rotation), S3 (public access, encryption, versioning), EC2 (security groups, IMDSv2, EBS encryption), RDS (encryption, backup, public), CloudTrail (enabled, multi-region, log validation), Config (enabled), GuardDuty (enabled), KMS (rotation), VPC (flow logs)
+- Results → findings + evidence records
+- Severity mapped from AWS Security Hub standard
+
+### 3.3 Azure Integration
+- Connect via Service Principal (clientId, clientSecret, tenantId, subscriptionId)
+- Checks: AKS (RBAC, node pools, network policy), App Service (HTTPS, auth, TLS), Entra ID (MFA, conditional access summary), Key Vault (soft delete, purge protection, access policies), SQL (TDE, auditing, firewall), Storage (HTTPS, public access, encryption), VM (disk encryption, just-in-time access)
+- Results → findings + evidence
+
+### 3.4 GCP Integration
+- Connect via Service Account JSON key
+- Checks: Compute (OS login, serial port, public IPs), IAM (service account keys, roles, org policies), Storage (uniform bucket-level access, public access prevention, versioning), Cloud Logging (log sinks, audit logs), Cloud Armor (WAF policies), KMS (key rotation)
+- Results → findings + evidence
+
+### 3.5 Slack Integration
+- Connect via Slack OAuth (Bot Token)
+- Outbound: compliance alerts, finding notifications, evidence request approvals, daily compliance digest
+- Inbound: `/compliguard status`, `/compliguard findings`, `/compliguard evidence submit [url]` slash commands
+- Channel configuration: choose channel per notification type
+- DB: `integrations` (type='slack')
+
+### 3.6 Jira Integration
+- Connect via Jira Cloud API token (email + token + subdomain)
+- Bidirectional: findings → Jira issues (auto-create), Jira issue status → finding status sync
+- Task → Jira issue sync
+- Field mapping: severity → priority, status → Jira status workflow
+- Webhooks: Jira → CompliGuard status updates
+- DB: `integrations` (type='jira')
+
+### 3.7 Automated NL Tests
+- Test library: "Check if SSL is enabled on {domain}", "Verify MFA is enforced", "Check if port 22 is open on {host}", etc.
+- Schedule: cron expressions (daily/weekly/monthly or custom)
+- AI parses natural language query → determines test type → executes check
+- Results stored in `nlTests` + `nlTestResults`
+- Failures → auto-create finding
+- `/integrations/nl-tests` page with test builder, schedule manager, result history
+
+---
+
+## 14. Phase 4 — Microsoft/Azure-Native Deep (IN PROGRESS)
+
+**Status**: 🔄 Building — launched 2026-05-04
+
+### 4.1 Azure Entra ID Deep
+- Groups inventory (members, owners, nested groups)
+- MFA status per user (enabled/disabled/enforced)
+- Conditional Access policies (list, evaluate coverage)
+- Sign-in risk events (risky users, risk detections)
+- Privileged roles (Global Admin, Security Admin, etc.) — PIM integration
+- Maps to: AC-2, AC-3, IA-2, IA-5, IA-8 NIST controls
+
+### 4.2 Microsoft Intune
+- Device compliance policies (compliant/non-compliant count per policy)
+- BitLocker encryption status per device
+- App protection policies (MAM)
+- OS version compliance (min required version check)
+- Non-compliant devices → findings
+- Maps to: CM-6, CM-7, SC-28, SI-2 NIST controls
+
+### 4.3 Defender for Cloud / XDR
+- Secure Score: overall + per control
+- Recommendations (unhealthy resources → findings)
+- Security alerts ingestion (high/medium severity → findings)
+- XDR incidents correlation
+- Maps to: RA-5, SI-3, SI-4 NIST controls
+
+### 4.4 Azure Sentinel (SIEM)
+- Incident ingestion (high/medium priority → findings)
+- Watchlist sync (IP/domain threat indicators)
+- Analytics rule inventory (detection coverage)
+- Incidents → audit trail entries
+- Maps to: AU-6, IR-4, IR-5, SI-4 NIST controls
+
+### 4.5 Microsoft Purview
+- DLP policy violations → findings
+- Information protection labels inventory
+- Sensitive data discovery summary
+- Maps to: AC-16, MP-4, SC-8, SI-12 NIST controls
+
+### 4.6 Microsoft Compliance Manager
+- Score sync (current score + improvement actions)
+- Assessment evidence mapping → CompliGuard evidence records
+- Improvement actions → tasks
+- Maps directly to framework controls
+
+### 4.7 Azure-Native Compliance Scanning
+- Unified scan orchestrator: runs all Azure checks (4.1–4.6) on schedule
+- AI remediation guidance: per-finding AI-generated fix steps using Azure docs
+- Scan summary report: PDF export per scan run
+- Scheduled via cron, results aggregated across all Azure sources
+
+---
+
+## 15. Phase 5 — Platform Completeness (IN PROGRESS)
+
+**Status**: 🔄 Building — launched 2026-05-04  
+**Excluded**: People sync, Background Checks, Secrets Vault, Stripe Billing
+
+### 5.1 Penetration Testing Module
+- Credits system (balance, purchase history — no Stripe, admin grants credits)
+- AI-powered scan: target scope → AI generates test plan → executes NL tests
+- Findings auto-created from scan results
+- Pentest report: PDF export with executive summary + technical findings
+- DB: `pentestSessions`, `pentestCredits` (already defined in billing.ts)
+
+### 5.2 Public API + API Keys + Webhooks
+- REST API v1: `/api/v1/controls`, `/api/v1/findings`, `/api/v1/evidence`, `/api/v1/frameworks`, `/api/v1/tasks`, `/api/v1/vendors`
+- API key management UI: create/revoke/scope keys
+- Key auth middleware: `Authorization: Bearer cgk_...` header
+- Scoped permissions: read:* / write:* / admin:*
+- Outbound webhooks: register URL + events, HMAC-signed payloads
+- DB: `apiKeys`, `webhooks`, `webhookDeliveries` (already defined in api_keys.ts)
+
+### 5.3 Self-Hosted Edition
+- `docker-compose.yml` — full stack: app + postgres + minio + redis
+- `docker-compose.override.yml` — dev overrides
+- `systemd/compliguard.service` — systemd unit file
+- `scripts/install.sh` — one-command install for Ubuntu/Debian
+- `scripts/backup.sh` — DB + storage backup script
+- `.env.example` with all required vars documented
+- Health check endpoint: `GET /api/health` (already exists)
+- README-SELFHOST.md with full setup guide
+
+### 5.4 Sentinel / Defender XDR Advanced
+- Real-time relay: streaming incidents via Azure Event Hub → SSE push to dashboard
+- Enriched audit trail: every Sentinel incident enriched with MITRE ATT&CK mapping
+- Threat intelligence feed: IoC sync from Sentinel watchlists → context hub
+- Live alert ticker widget on dashboard
+
+### 5.7 Security Training Module
+- Training library: built-in modules (Security Awareness, Phishing, GDPR, SOC 2 Basics)
+- Custom module creation: title, content (markdown), quiz questions, passing score
+- Assign modules to users or all-org
+- Completion tracking + certificate generation (PDF)
+- Compliance evidence: completion records auto-create evidence entries
+- DB: `trainingModules`, `trainingCompletions` (already defined in training.ts)
+
+### 5.8 Knowledge Base (Vector-Store Backed)
+- `/knowledge-base` page: articles, procedures, runbooks
+- Markdown editor for content creation
+- Vector search: embedding stored in `knowledgeBaseEntries.embedding` (jsonb)
+- AI-powered search: natural language query → semantic similarity → ranked results
+- Categories: policies, procedures, runbooks, FAQs, control guidance
+- Auto-populate: import from compliance frameworks, AI-generated summaries
+
+### 5.9 Microsoft Teams Bot
+- Bot registration via Azure Bot Service (App ID + App Password config)
+- Commands: `help`, `status`, `findings`, `evidence`, `task [id]`, `assign [task] [user]`
+- Proactive notifications: mention users on finding assignments, evidence requests
+- Adaptive Cards: rich finding/task cards with action buttons
+- Auth: link Teams identity to CompliGuard user via magic link
+- DB: `teamsConversationRefs` (already defined in teams_bot.ts)
+
+### Phase 5 Commit: `5560de5` baseline
+
+---
+
+## 16. GitHub Commit Log (Complete)
+
+- `e133876` — fix: resolve all TypeScript build errors Phase 0
+- `1a02afe` — docs: controls mapping engine architecture
+- `b2a3fc5` — feat: dark glass design system full UI revamp
+- `765aa62` — fix: port 3030, legacy-peer-deps, DB port 5433
+- `18a3878` — feat: Phase 1 — Controls Mapping Engine (18 files)
+- `e36a695` — fix: add missing /api/health and /api/auth/session routes
+- `930575e` — seed: add create-admin.ts script
+- `4d71dfd` — fix: swap Neon serverless driver to postgres-js
+- `e377e35` — feat: landing page + setup wizard skip + settings hub
+- `da460c9` — fix: restore scrolling
+- `207542c` — fix: logout, profile, draggable KPI cards, logo alignment, landing page, 404
+- `7a4fe40` — fix: RSC boundary — pass iconName string instead of LucideIcon
+- `d15c301` — fix: features section 2-col layout, wizard skip button, remove forced setup redirect
+- `4ae5184` — feat: Phase 1 complete — NIST seed, live controls/mappings, notifications, comments, reports, SOA, auditor view, trust portal, AI mapping
+- `566a69e` — feat: upgrade NIST seed — 243 controls, onConflictDoUpdate idempotent
+- `2922f6c` — feat: Phase 2 — Operational Backbone (2.1–2.15)
+- `5560de5` — feat: AI settings — add Claude + Ollama (local) provider support

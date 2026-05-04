@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Mail, HardDrive, Brain, Puzzle, Building2, Users, ChevronRight, CheckCircle, AlertCircle, Settings } from 'lucide-react'
+import { Mail, HardDrive, Brain, Puzzle, Building2, Users, ChevronRight, CheckCircle, AlertCircle, Settings, MessageSquare } from 'lucide-react'
 
 const SETTINGS_SECTIONS = [
   {
@@ -50,6 +50,14 @@ const SETTINGS_SECTIONS = [
     title: 'Integrations',
     description: 'AWS, Azure, Microsoft 365, Jira, GitHub and cloud provider connections',
     color: '#06B6D4',
+    status: 'skipped' as const,
+  },
+  {
+    href: '/settings/teams-bot',
+    icon: MessageSquare,
+    title: 'Teams Bot',
+    description: 'Microsoft Teams Bot for real-time compliance alerts and status commands',
+    color: '#8B5CF6',
     status: 'skipped' as const,
   },
 ]

@@ -1,0 +1,15 @@
+version: '3.8'
+services:
+  app:
+    build:
+      target: development
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+    command: npm run dev
+  # Don't start nginx in dev
+  nginx:
+    profiles: ["prod-only"]

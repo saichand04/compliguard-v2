@@ -3,11 +3,18 @@ import { redirect } from 'next/navigation'
 import { FrameworkProgressCard } from '@/components/dashboard/framework-progress-card'
 import { DraggableStatsGrid } from '@/components/dashboard/draggable-stats-grid'
 import { MyTasksWidget } from '@/components/dashboard/my-tasks-widget'
+import createDynamic from 'next/dynamic'
 import {
   Shield, CheckSquare, AlertTriangle, FileText,
   Link2, Activity, ArrowRight,
   Zap, GitBranch, ChevronRight,
 } from 'lucide-react'
+
+// Lazy-load XDRTicker — won't fail if XDR API is unavailable
+const XDRTicker = createDynamic(
+  () => import('@/components/dashboard/xdr-ticker').then((m) => ({ default: m.XDRTicker })),
+  { ssr: false, loading: () => null },
+)
 
 export const dynamic = 'force-dynamic'
 
@@ -203,6 +210,9 @@ export default async function DashboardPage() {
 
           {/* My Tasks widget */}
           <MyTasksWidget />
+
+          {/* XDR Live Alert Ticker — lazy loaded, fails silently if not configured */}
+          <XDRTicker />
 
         </div>
       </div>

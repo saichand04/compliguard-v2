@@ -6,7 +6,8 @@ import {
   LayoutDashboard, Shield, FileText, AlertTriangle,
   ScrollText, ClipboardList, Users2, Search, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
-  Zap, Library, Map, Upload, Bell, FileCheck, Eye, GitBranch, ShieldCheck, Sparkles, Brain, Calendar,
+  Zap, Library, Map, Upload, Bell, FileCheck, Eye, GitBranch, ShieldCheck, Sparkles, Brain, Calendar, FlaskConical, BookOpen, MessageSquare,
+  UserCheck, Monitor, Sword, Satellite, ShieldOff, Target, CloudLightning, Key, Webhook, GraduationCap,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -52,6 +53,13 @@ const NAV_GROUPS = [
       { href: '/vendors',   label: 'Vendors',    icon: Users2 },
       { href: '/people',    label: 'People',     icon: UsersRound },
       { href: '/org-chart', label: 'Org Chart',  icon: GitBranch },
+      { href: '/training',  label: 'Training',   icon: GraduationCap },
+    ],
+  },
+  {
+    label: 'Security',
+    items: [
+      { href: '/pentest', label: 'Pen Testing', icon: ShieldCheck },
     ],
   },
   {
@@ -59,14 +67,31 @@ const NAV_GROUPS = [
     items: [
       { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
       { href: '/context-hub',  label: 'Context Hub',  icon: Brain },
+      { href: '/knowledge',    label: 'Knowledge Base', icon: BookOpen },
+    ],
+  },
+  {
+    label: 'Microsoft 365',
+    items: [
+      { href: '/integrations/entra',              label: 'Entra ID',          icon: UserCheck },
+      { href: '/integrations/intune',             label: 'Intune',            icon: Monitor },
+      { href: '/integrations/defender',           label: 'Defender',          icon: Sword },
+      { href: '/integrations/sentinel',           label: 'Sentinel',          icon: Satellite },
+      { href: '/integrations/purview',            label: 'Purview',           icon: ShieldOff },
+      { href: '/integrations/compliance-manager', label: 'Compliance Mgr',   icon: Target },
+      { href: '/integrations/azure-scan',         label: 'Azure Scan',        icon: CloudLightning },
     ],
   },
   {
     label: 'Platform',
     items: [
-      { href: '/integrations',   label: 'Integrations', icon: Plug },
-      { href: '/settings',       label: 'Settings',     icon: Settings },
-      { href: '/settings/roles', label: 'Roles',        icon: ShieldCheck },
+      { href: '/integrations',          label: 'Integrations', icon: Plug },
+      { href: '/integrations/nl-tests', label: 'NL Tests',     icon: FlaskConical },
+      { href: '/settings',              label: 'Settings',     icon: Settings },
+      { href: '/settings/roles',        label: 'Roles',        icon: ShieldCheck },
+      { href: '/settings/api-keys',    label: 'API Keys',     icon: Key },
+      { href: '/settings/webhooks',    label: 'Webhooks',     icon: Webhook },
+      { href: '/settings/teams-bot',   label: 'Teams Bot',    icon: MessageSquare },
     ],
   },
 ]

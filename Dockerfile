@@ -1,64 +1,36 @@
-# ============================================================
-# CompliGuard v2 — Multi-stage Dockerfile
-# ============================================================
-
-# Stage 1: Dependencies
-FROM node:20-alpine AS deps
-RUN apk add --no-cache libc6-compat
+FROM node:20-alpine AS base
 WORKDIR /app
+RUN apk add --no-cache libc6-compat
 
+FROM base AS deps
 COPY package.json package-lock.json* ./
 RUN npm ci --legacy-peer-deps
 
-# Stage 2: Builder
-FROM node:20-alpine AS builder
-WORKDIR /app
-
+FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-
-# Generate Drizzle migrations (skip if no DB available at build time)
-# RUN npm run db:generate
-
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_ENV=production
-
+ENV DATABASE_URL=postgresql://placeholder:placeholder@placeholder:5432/placeholder
+ENV NEXTAUTH_SECRET=build-time-placeholder-secret-32-chars
+ENV NEXTAUTH_URL=http://localhost:3030
 RUN npm run build
 
-# Stage 3: Runner
-FROM node:20-alpine AS runner
-WORKDIR /app
-
+FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nextjs
-
-# Copy public assets
+RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
-
-# Copy Next.js standalone output
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-
-# Copy drizzle migrations so they can be applied at runtime
-COPY --from=builder /app/drizzle ./drizzle
-COPY --from=builder /app/drizzle.config.ts ./drizzle.config.ts
-COPY --from=builder /app/package.json ./package.json
-
-# Copy seed data
-COPY --from=builder /app/seed ./seed
-
-# Copy local storage default directory placeholder
-RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
-
 USER nextjs
-
-EXPOSE 3000
-
-ENV PORT=3000
+EXPOSE 3030
+ENV PORT=3030
 ENV HOSTNAME="0.0.0.0"
-
-# Use Next.js standalone server
 CMD ["node", "server.js"]
+
+FROM base AS development
+ENV NODE_ENV=development
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+EXPOSE 3030
+CMD ["npm", "run", "dev"]

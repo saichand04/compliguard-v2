@@ -16,6 +16,8 @@ const PUBLIC_PATHS = [
   '/api/evidence-requests',             // Token-based evidence request upload (GET+POST, no auth)
   '/api/inbound-email',
   '/api/webhooks/postmark/inbound',     // Postmark inbound webhook (HMAC-verified)
+  '/api/webhooks/slack',
+  '/api/webhooks/jira',
   '/api/teams-bot',
   '/api/auth',
   '/api/health',
@@ -24,6 +26,7 @@ const PUBLIC_PATHS = [
   '/_next',
   '/favicon.ico',
   '/mcp-manifest.json',
+  '/api/v1',                              // Public REST API v1 — authenticated via API key, not session
 ]
 
 function isPublicPath(pathname: string): boolean {
