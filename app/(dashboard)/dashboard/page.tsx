@@ -16,6 +16,12 @@ const XDRTicker = createDynamic(
   { ssr: false, loading: () => null },
 )
 
+// Lazy-load TeamsStatusWidget — non-critical, SSR disabled
+const TeamsStatusWidget = createDynamic(
+  () => import('@/components/dashboard/teams-status-widget').then((m) => ({ default: m.TeamsStatusWidget })),
+  { ssr: false, loading: () => null },
+)
+
 export const dynamic = 'force-dynamic'
 
 // ── Demo data (replaced by real DB queries once DB is connected) ──
@@ -213,6 +219,9 @@ export default async function DashboardPage() {
 
           {/* XDR Live Alert Ticker — lazy loaded, fails silently if not configured */}
           <XDRTicker />
+
+          {/* Teams Bot Status Widget — lazy loaded */}
+          <TeamsStatusWidget />
 
         </div>
       </div>

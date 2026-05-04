@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { Mail, HardDrive, Brain, Puzzle, Building2, Users, ChevronRight, CheckCircle, AlertCircle, Settings, MessageSquare } from 'lucide-react'
+import { Mail, HardDrive, Brain, Puzzle, Building2, Users, ChevronRight, CheckCircle, AlertCircle, Settings, MessageSquare, Satellite, Server } from 'lucide-react'
 
 const SETTINGS_SECTIONS = [
   {
@@ -59,6 +59,14 @@ const SETTINGS_SECTIONS = [
     description: 'Microsoft Teams Bot for real-time compliance alerts and status commands',
     color: '#8B5CF6',
     status: 'skipped' as const,
+  },
+  {
+    href: '/settings/mcp',
+    icon: Server,
+    title: 'MCP Server',
+    description: 'Connect AI agents (Claude, OpenClaw) via Model Context Protocol — manage compliance through natural language',
+    color: '#06B6D4',
+    status: 'configured' as const,
   },
 ]
 

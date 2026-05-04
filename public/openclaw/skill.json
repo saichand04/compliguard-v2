@@ -1,0 +1,223 @@
+{
+  "$schema": "https://openclaw.dev/schemas/skill/v1.json",
+  "name": "compliguard",
+  "displayName": "CompliGuard GRC",
+  "version": "1.0.0",
+  "description": "AI-powered GRC compliance platform. Manage frameworks, controls, findings, tasks and evidence through natural language.",
+  "author": "CompliGuard",
+  "license": "Apache-2.0",
+  "categories": ["compliance", "security", "governance"],
+  "tags": ["GRC", "SOC2", "NIST", "ISO27001", "compliance", "risk"],
+  "icon": "/favicon.ico",
+  "homepage": "https://your-domain.com",
+  "mcpEndpoint": "/api/mcp",
+  "auth": {
+    "type": "apiKey",
+    "headerName": "Authorization",
+    "prefix": "Bearer",
+    "keyFormat": "cgk_*",
+    "scopes": {
+      "mcp:read": "Read-only access to controls, findings, tasks",
+      "mcp:write": "Create and update findings, tasks",
+      "admin:*": "Full administrative access"
+    }
+  },
+  "tools": [
+    {
+      "name": "list_frameworks",
+      "description": "List all active compliance frameworks for the organization. Optionally include control counts and compliance percentage.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includeControls": {
+            "type": "boolean",
+            "description": "If true, include control counts and compliance percentage for each framework"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_control_status",
+      "description": "Get full control details: title, description, status, assignees, evidence count, and linked findings.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "controlId": {
+            "type": "string",
+            "description": "The UUID of the control to retrieve"
+          }
+        },
+        "required": ["controlId"]
+      }
+    },
+    {
+      "name": "list_findings",
+      "description": "List security and compliance findings with optional severity and status filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "description": "Filter by severity level",
+            "enum": ["critical", "high", "medium", "low"]
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by finding status",
+            "enum": ["open", "in_review", "resolved"]
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of findings to return (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_finding",
+      "description": "Create a new security or compliance finding. Returns the created finding ID.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Title of the finding"
+          },
+          "description": {
+            "type": "string",
+            "description": "Detailed description of the finding"
+          },
+          "severity": {
+            "type": "string",
+            "description": "Severity level of the finding",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "affectedAsset": {
+            "type": "string",
+            "description": "The asset or system affected by this finding"
+          }
+        },
+        "required": ["title", "description", "severity"]
+      }
+    },
+    {
+      "name": "list_tasks",
+      "description": "List compliance tasks with optional status filter and assignment filter.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Filter by task status (todo, in_progress, done, blocked, overdue)"
+          },
+          "assignedToMe": {
+            "type": "boolean",
+            "description": "If true, only return tasks assigned to the current user"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of tasks to return (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "update_task_status",
+      "description": "Update a task's status.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "description": "The UUID of the task to update"
+          },
+          "status": {
+            "type": "string",
+            "description": "New status for the task",
+            "enum": ["todo", "in_progress", "done", "blocked"]
+          }
+        },
+        "required": ["taskId", "status"]
+      }
+    },
+    {
+      "name": "get_compliance_score",
+      "description": "Get overall or per-framework compliance score (percentage of controls implemented or tested).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "frameworkId": {
+            "type": "string",
+            "description": "Optional UUID of a specific framework. If omitted, returns the overall score."
+          }
+        }
+      }
+    },
+    {
+      "name": "search_controls",
+      "description": "Full-text search controls by title or description.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query string to match against control titles and descriptions"
+          },
+          "frameworkId": {
+            "type": "string",
+            "description": "Optional UUID to restrict search to a specific framework"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return (default: 10)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "list_evidence",
+      "description": "List evidence items with optional control and status filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "controlId": {
+            "type": "string",
+            "description": "Optional UUID of a control to filter evidence by"
+          },
+          "status": {
+            "type": "string",
+            "description": "Filter by evidence status (pending, approved, rejected, expired)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of evidence items to return (default: 20)"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_risk_summary",
+      "description": "Get a risk summary: finding counts by severity, overdue tasks, frameworks below 70% compliance, and top 3 risk areas.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ],
+  "examples": [
+    { "prompt": "What is our current SOC 2 compliance score?", "tool": "get_compliance_score", "args": {} },
+    { "prompt": "Show me all critical findings", "tool": "list_findings", "args": { "severity": "critical" } },
+    { "prompt": "What tasks are overdue?", "tool": "list_tasks", "args": { "status": "overdue" } },
+    { "prompt": "Get a full risk summary", "tool": "get_risk_summary", "args": {} },
+    { "prompt": "Search for access control requirements in NIST", "tool": "search_controls", "args": { "query": "access control" } }
+  ],
+  "setup": {
+    "steps": [
+      "Deploy CompliGuard to your server",
+      "Navigate to Settings → MCP Server",
+      "Create an MCP API key with the required scopes",
+      "Register this skill in OpenClaw with your deployment URL and API key"
+    ]
+  }
+}

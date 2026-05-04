@@ -7,7 +7,7 @@ import {
   ScrollText, ClipboardList, Users2, Search, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
   Zap, Library, Map, Upload, Bell, FileCheck, Eye, GitBranch, ShieldCheck, Sparkles, Brain, Calendar, FlaskConical, BookOpen, MessageSquare,
-  UserCheck, Monitor, Sword, Satellite, ShieldOff, Target, CloudLightning, Key, Webhook, GraduationCap,
+  UserCheck, Monitor, Sword, Satellite, ShieldOff, Target, CloudLightning, Key, Webhook, GraduationCap, Server,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -65,9 +65,10 @@ const NAV_GROUPS = [
   {
     label: 'AI',
     items: [
-      { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
-      { href: '/context-hub',  label: 'Context Hub',  icon: Brain },
-      { href: '/knowledge',    label: 'Knowledge Base', icon: BookOpen },
+      { href: '/ai-assistant',          label: 'AI Assistant',  icon: Sparkles },
+      { href: '/ai-assistant/nl-query', label: 'NL Query',      icon: MessageSquare },
+      { href: '/context-hub',           label: 'Context Hub',   icon: Brain },
+      { href: '/knowledge',             label: 'Knowledge Base', icon: BookOpen },
     ],
   },
   {
@@ -92,6 +93,8 @@ const NAV_GROUPS = [
       { href: '/settings/api-keys',    label: 'API Keys',     icon: Key },
       { href: '/settings/webhooks',    label: 'Webhooks',     icon: Webhook },
       { href: '/settings/teams-bot',   label: 'Teams Bot',    icon: MessageSquare },
+      { href: '/settings/mcp',         label: 'MCP Server',   icon: Server },
+      { href: '/settings/openclaw',      label: 'OpenClaw',     icon: Satellite },
     ],
   },
 ]

@@ -19,6 +19,7 @@ const PUBLIC_PATHS = [
   '/api/webhooks/slack',
   '/api/webhooks/jira',
   '/api/teams-bot',
+  '/api/teams/bot',                         // Teams Bot webhook (HMAC-verified, no session auth)
   '/api/auth',
   '/api/health',
   '/questionnaire',
@@ -27,6 +28,10 @@ const PUBLIC_PATHS = [
   '/favicon.ico',
   '/mcp-manifest.json',
   '/api/v1',                              // Public REST API v1 — authenticated via API key, not session
+  '/api/mcp/ping',                        // OpenClaw instance keepalive (no session, validates instanceId)
+  '/api/mcp/nl-query',                    // NL Query — accepts API key OR session auth
+  '/api/mcp',                             // MCP Server JSON-RPC endpoint — authenticated via API key, not session
+  '/openclaw',                            // OpenClaw skill pack static files
 ]
 
 function isPublicPath(pathname: string): boolean {

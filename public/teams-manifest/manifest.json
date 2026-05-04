@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.16/MicrosoftTeams.schema.json",
   "manifestVersion": "1.16",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "id": "{{BOT_APP_ID}}",
   "packageName": "com.compliguard.bot",
   "developer": {
@@ -15,8 +15,8 @@
     "full": "CompliGuard GRC Bot"
   },
   "description": {
-    "short": "GRC compliance notifications and status commands",
-    "full": "CompliGuard bot for real-time compliance alerts, finding notifications, and status queries directly in Microsoft Teams."
+    "short": "GRC compliance notifications and slash commands",
+    "full": "CompliGuard bot for real-time compliance alerts, finding notifications, risk summaries, task tracking, policy status, and control lookups directly in Microsoft Teams."
   },
   "icons": {
     "color": "icon-color.png",
@@ -30,19 +30,35 @@
       "isNotificationOnly": false,
       "commandLists": [
         {
-          "scopes": ["personal", "team"],
+          "scopes": ["personal", "team", "groupchat"],
           "commands": [
             {
-              "title": "status",
-              "description": "Get compliance status summary"
+              "title": "compliance",
+              "description": "Show overall compliance score and framework breakdown"
+            },
+            {
+              "title": "control",
+              "description": "Look up a specific control (e.g. /control AC-1)"
+            },
+            {
+              "title": "risks",
+              "description": "Show current risk summary — critical and high findings"
+            },
+            {
+              "title": "tasks",
+              "description": "Show overdue and upcoming compliance tasks"
             },
             {
               "title": "findings",
-              "description": "List top critical findings"
+              "description": "Show recent open findings sorted by severity"
+            },
+            {
+              "title": "policy",
+              "description": "Show policy-related controls and findings"
             },
             {
               "title": "help",
-              "description": "Show available commands"
+              "description": "Show all available commands"
             }
           ]
         }

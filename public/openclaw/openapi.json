@@ -1,0 +1,455 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "CompliGuard Public API",
+    "description": "REST API for CompliGuard GRC platform. Provides access to compliance frameworks, controls, findings, tasks, and evidence. Also served as an MCP server at /api/mcp.",
+    "version": "1.0.0",
+    "contact": {
+      "name": "CompliGuard",
+      "url": "https://your-domain.com"
+    },
+    "license": {
+      "name": "Apache-2.0"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://your-domain.com/api/v1",
+      "description": "Production"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "CompliGuard API Key (cgk_...)",
+        "description": "API key generated from Settings → API Keys. Must have appropriate scopes."
+      }
+    },
+    "schemas": {
+      "Framework": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "shortName": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "isActive": { "type": "boolean" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Control": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "controlId": { "type": "string", "description": "Framework-specific control ID (e.g. CC6.1, A.9.1)" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "subcategory": { "type": "string" },
+          "frameworkId": { "type": "string", "format": "uuid" },
+          "status": {
+            "type": "string",
+            "enum": ["not_started", "in_progress", "implemented", "needs_review", "not_applicable"]
+          }
+        }
+      },
+      "Finding": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low", "info"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["open", "in_remediation", "resolved", "accepted", "false_positive"]
+          },
+          "source": {
+            "type": "string",
+            "enum": ["aws", "azure", "gcp", "github", "pentest", "manual", "nl_test", "integration"]
+          },
+          "affectedAsset": { "type": "string" },
+          "assignedTo": { "type": "string", "format": "uuid", "nullable": true },
+          "dueDate": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "in_progress", "done", "blocked", "cancelled"]
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "urgent"]
+          },
+          "assignedTo": { "type": "string", "format": "uuid", "nullable": true },
+          "dueDate": { "type": "string", "format": "date-time", "nullable": true },
+          "completedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OrgSummary": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "plan": { "type": "string" },
+          "frameworkCount": { "type": "integer" },
+          "controlCount": { "type": "integer" },
+          "overallComplianceScore": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" },
+          "message": { "type": "string" },
+          "status": { "type": "integer" }
+        }
+      }
+    }
+  },
+  "security": [
+    { "bearerAuth": [] }
+  ],
+  "paths": {
+    "/frameworks": {
+      "get": {
+        "operationId": "listFrameworks",
+        "summary": "List active compliance frameworks",
+        "description": "Returns all compliance frameworks active for the organization.",
+        "tags": ["Frameworks"],
+        "parameters": [
+          {
+            "name": "includeControls",
+            "in": "query",
+            "description": "If true, include control counts and compliance percentage",
+            "schema": { "type": "boolean" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of active frameworks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "frameworks": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Framework" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/controls": {
+      "get": {
+        "operationId": "listControls",
+        "summary": "List or search controls",
+        "description": "Returns controls across the organization's active frameworks with optional full-text search.",
+        "tags": ["Controls"],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Full-text search query across control titles and descriptions",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "frameworkId",
+            "in": "query",
+            "description": "Filter by framework UUID",
+            "schema": { "type": "string", "format": "uuid" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Filter by control status",
+            "schema": {
+              "type": "string",
+              "enum": ["not_started", "in_progress", "implemented", "needs_review", "not_applicable"]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of controls",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "controls": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Control" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/findings": {
+      "get": {
+        "operationId": "listFindings",
+        "summary": "List findings",
+        "description": "Returns security and compliance findings with optional filters.",
+        "tags": ["Findings"],
+        "parameters": [
+          {
+            "name": "severity",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["critical", "high", "medium", "low", "info"] }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["open", "in_remediation", "resolved", "accepted", "false_positive"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of findings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "findings": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Finding" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      },
+      "post": {
+        "operationId": "createFinding",
+        "summary": "Create a finding",
+        "description": "Create a new compliance or security finding.",
+        "tags": ["Findings"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "description", "severity"],
+                "properties": {
+                  "title": { "type": "string", "maxLength": 500 },
+                  "description": { "type": "string" },
+                  "severity": {
+                    "type": "string",
+                    "enum": ["critical", "high", "medium", "low", "info"]
+                  },
+                  "affectedAsset": { "type": "string", "maxLength": 500 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Finding created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "finding": { "$ref": "#/components/schemas/Finding" }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Bad request" },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden — requires write scope" }
+        }
+      }
+    },
+    "/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "summary": "List tasks",
+        "description": "Returns compliance tasks with optional filters.",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["todo", "in_progress", "done", "blocked", "cancelled"] }
+          },
+          {
+            "name": "priority",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["low", "medium", "high", "urgent"] }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 20, "maximum": 100 }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tasks",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tasks": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Task" }
+                    },
+                    "total": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/tasks/{id}": {
+      "patch": {
+        "operationId": "updateTask",
+        "summary": "Update a task",
+        "description": "Update a task's status or other fields.",
+        "tags": ["Tasks"],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": ["todo", "in_progress", "done", "blocked"]
+                  },
+                  "priority": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "urgent"]
+                  },
+                  "assignedTo": { "type": "string", "format": "uuid", "nullable": true },
+                  "dueDate": { "type": "string", "format": "date-time", "nullable": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Task updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "task": { "$ref": "#/components/schemas/Task" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" },
+          "403": { "description": "Forbidden — requires write scope" },
+          "404": { "description": "Task not found" }
+        }
+      }
+    },
+    "/org": {
+      "get": {
+        "operationId": "getOrg",
+        "summary": "Get organization summary",
+        "description": "Returns the organization summary including compliance score and framework counts.",
+        "tags": ["Organization"],
+        "responses": {
+          "200": {
+            "description": "Organization summary",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrgSummary" }
+              }
+            }
+          },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    }
+  },
+  "tags": [
+    { "name": "Frameworks", "description": "Compliance frameworks (SOC 2, NIST, ISO 27001, etc.)" },
+    { "name": "Controls", "description": "Individual compliance controls within frameworks" },
+    { "name": "Findings", "description": "Security and compliance findings" },
+    { "name": "Tasks", "description": "Compliance task management" },
+    { "name": "Organization", "description": "Organization-level data and settings" }
+  ]
+}
