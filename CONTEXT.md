@@ -875,3 +875,94 @@ lib/email/templates/                           → Email HTML templates (2.13)
 - Pushed: `main` branch → GitHub
 - Deployed: tar → pc push → Mac extract → npm install → restart (rm -rf .next)
 - Confirmed running: http://localhost:3030 (Turbopack, Ready in 264ms)
+
+## Phase 6 — Completion Log (2026-05-04)
+
+### 6.1 CompliGuard MCP Server
+- `lib/mcp/types.ts` — MCPTool, MCPToolCall, MCPToolResult, MCPRequest, MCPResponse types
+- `lib/mcp/tools.ts` — 10 tool handlers with real DB queries:
+  list_frameworks, get_control_status, list_findings, create_finding,
+  list_tasks, update_task_status, get_compliance_score, search_controls,
+  list_evidence, get_risk_summary
+- `app/api/mcp/route.ts` — JSON-RPC 2.0, bearer API key auth (cgk_* prefix), mcp:write scope for mutations
+- `app/api/mcp/manifest/route.ts` — Public GET returning full server manifest with all 10 tool defs
+- Settings UI: `app/(dashboard)/settings/mcp/` — server status, key management, Claude Desktop JSON snippet, tool reference
+
+### 6.2 OpenClaw Skill Pack
+- `public/openclaw/skill.json` — OpenClaw v1 manifest with tools, auth, scopes, 5 examples
+- `public/openclaw/README.md` — ClawHub install, self-hosted registration, security guide
+- `public/openclaw/openapi.json` — OpenAPI 3.1 spec for REST endpoints
+
+### 6.3 OpenClaw Auth
+- `lib/mcp/auth.ts` — hasMCPReadAccess/hasMCPWriteAccess/hasMCPAdminAccess, sliding-window rate limit (100/min read, 20/min write), logMCPAccess to auditLogs
+- `app/api/mcp/register/route.ts` — GET/POST/DELETE registered OpenClaw instances (stored in systemSettings.extraConfig.openclawInstances)
+- `app/api/mcp/ping/route.ts` — Public heartbeat, updates lastPingAt
+- Settings UI: `app/(dashboard)/settings/openclaw/` — instances table, skill pack downloads, agent access log, setup guide
+
+### 6.4 NL Query Skill
+- `lib/mcp/nl-query.ts` — Agentic loop: OpenAI function calling / Anthropic tool use / Ollama context injection, max 3 tool calls per query, returns answer + toolsUsed + confidence + followUpQuestions
+- `app/api/mcp/nl-query/route.ts` — Dual auth (session OR mcp:read API key), SSE streaming, 10 req/min rate limit, audit logging
+- UI: `app/(dashboard)/ai-assistant/nl-query/` — chat interface with collapsible tool call details, confidence badge, follow-up chips, streaming
+
+## Phase 7 — Completion Log (2026-05-04)
+
+### 7.1 Azure Bot Service Registration
+- `docs/teams-bot-setup.md` — 590-line guide: Azure AD App Registration, Bot Service creation, Teams channel, CompliGuard config, manifest install, ngrok local dev, secret rotation
+- `docs/teams-bot-commands.md` — 495-line command reference with example card responses
+
+### 7.2 Enhanced Bot API Route
+- `app/api/teams/bot/route.ts` — Handles conversationUpdate (save ref + welcome card), message (command dispatcher), invoke (approve/reject adaptive card actions)
+- Org resolution via teamsConversationRefs lookup by conversationId
+- HTML tag stripping from Teams message text before parsing
+- Bearer token HMAC-SHA256 validation (dev bypass when BOT_APP_PASSWORD unset)
+
+### 7.3 Slash Commands
+- `lib/teams/commands.ts` — 1053 lines, 7 command handlers + keyword "Did you mean?" fallback:
+  - /compliance → per-framework score with progress bars + overall %
+  - /control → lookup by ID or title ILIKE, shows status/assignee/evidence/findings
+  - /risks → severity counts + top 5 critical/high findings
+  - /tasks → overdue + upcoming within 7 days
+  - /findings → 10 most recent open findings, severity-sorted
+  - /policy → policy-related controls + findings
+  - /help → static help card always works
+- `public/teams-manifest/manifest.json` → v2.0.0 with all 7 commands
+
+### 7.4 Rich Adaptive Cards (added to lib/teams/bot.ts)
+- createFrameworkProgressCard — Unicode progress bars, color-coded scores
+- createControlDetailCard — header, status badge, description, evidence/findings stats, action buttons
+- createRiskSummaryCard — severity grid, top risks, at-risk frameworks
+- createEvidenceApprovalCard — Approve/Reject Submit actions with evidenceId+orgId payload
+- createTaskReminderCard — overdue warning, Mark Done Submit action
+
+### 7.5 Proactive Notifications
+- `lib/teams/notifications.ts` — upgraded with org-scoped broadcastToOrg({sent,failed}), notifyEvidenceNeedsReview, notifyTaskOverdue, notifyCriticalFinding, notifyEvidenceRejected, notifyPolicyExpiry
+- `lib/teams/hooks.ts` — fire-and-forget triggers: onFindingCreated (critical/high only), onEvidencePendingReview, onEvidenceRejected, checkAndNotifyOverdueTasks (24h rate-limit via task metadata)
+
+### 7.6 Approval Actions from Teams
+- `lib/teams/approvals.ts` — handleApproveEvidence / handleRejectEvidence → DB update + returns updated result card
+- `app/api/teams/check-overdue/route.ts` — POST (admin) → checkAndNotifyOverdueTasks
+
+### 7.7 Daily Digest
+- `lib/teams/digest.ts` — collectDigestData (org name, findings, tasks, evidence, audit log, framework scores), sendDailyDigest → broadcasts to all active conversation refs
+- createDailyDigestCard — rich morning summary: score delta, key metrics, framework health rows, recent activity, action buttons
+- `app/api/teams/digest/route.ts` — GET/POST/PATCH, dual auth (session OR x-cron-secret header)
+- TeamsBotClient.tsx Section 6 — digest enable/time/timezone settings, Send Now button
+
+### 7.8 Conversation Reference Storage
+- `lib/teams/bot.ts` — saveConversationRef (upsert), deactivateConversationRef, getActiveConversationRefs, pruneStaleConversationRefs
+- `app/api/teams/conversations/route.ts` — enhanced with PATCH (toggle active) + DELETE ?prune=true
+- `app/api/teams/conversations/stats/route.ts` — GET stats: total/active/inactive/channelBreakdown
+- TeamsBotClient.tsx Section 7 — conversation stats bar, enhanced table, Prune Stale button
+- `components/dashboard/teams-status-widget.tsx` — dashboard widget (SSR disabled, shows bot status + conv count)
+
+## Deployment Log
+- Committed: `2ce0088` (38 files, +9,773 lines)
+- Pushed: `main` → GitHub
+- Deployed: tar → pc push → Mac extract → rm -rf .next/.turbo → restart
+- Confirmed: http://localhost:3030 running (Turbopack, Ready in 279ms)
+
+## Bug Fix (same session)
+- **Turbopack stale cache**: Cannot find module '../chunks/ssr/[turbopack]_runtime.js'
+  - Root cause: old .next/dev/server/pages/_document.js referenced chunk from prior build
+  - Fix: `kill -9 $(lsof -ti:3030); rm -rf .next .turbo; npm run dev`
+  - Must always `rm -rf .next` before restart when new files are pushed
