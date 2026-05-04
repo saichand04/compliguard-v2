@@ -1,6 +1,6 @@
 /**
  * POST /api/frameworks/upload
- * Accept multipart/form-data with a framework file (CSV or JSON).
+ * Accept multipart/form-data with a framework file (CSV, JSON, or XLSX).
  * Parse, normalize, run mapping engine, return preview.
  * Stores an upload record in the framework_uploads table.
  */
@@ -19,6 +19,64 @@ export const dynamic = 'force-dynamic'
 
 // Max file size: 5MB
 const MAX_FILE_SIZE = 5 * 1024 * 1024
+
+/**
+ * Parse an XLSX buffer into CSV-like content string for the normalizer.
+ * Uses dynamic import so the xlsx package is optional — returns null if unavailable.
+ */
+async function parseXlsx(buffer: Buffer): Promise<string | null> {
+  try {
+    // Dynamic import — xlsx is an optional peer dependency
+    const XLSX = await import('xlsx')
+    const workbook = XLSX.read(buffer, { type: 'buffer' })
+
+    // Use the first sheet
+    const sheetName = workbook.SheetNames[0]
+    if (!sheetName) return null
+
+    const sheet = workbook.Sheets[sheetName]
+    const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+
+    if (rows.length === 0) return null
+
+    // Convert to CSV-like normalized content
+    // Try to detect common column names for control ID and title
+    const headers = Object.keys(rows[0])
+
+    // Map each row to a NormalizedControl-compatible CSV row
+    const idCol = headers.find((h) =>
+      /^(id|control.?id|control.?number|ctrl.?id|identifier|ref)/i.test(h)
+    ) ?? headers[0]
+
+    const titleCol = headers.find((h) =>
+      /^(title|name|control.?name|control.?title|description|requirement)/i.test(h)
+    ) ?? headers[1] ?? headers[0]
+
+    const descCol = headers.find((h) =>
+      /^(description|detail|guidance|objective|requirement|text)/i.test(h) && h !== titleCol
+    ) ?? ''
+
+    const catCol = headers.find((h) =>
+      /^(category|domain|family|area|group|section)/i.test(h)
+    ) ?? ''
+
+    // Build CSV: id,title,description,category
+    const csvLines: string[] = ['id,title,description,category']
+    for (const row of rows) {
+      const id = String(row[idCol] ?? '').trim()
+      const title = String(row[titleCol] ?? '').replace(/"/g, '""').trim()
+      const desc = descCol ? String(row[descCol] ?? '').replace(/"/g, '""').trim() : ''
+      const cat = catCol ? String(row[catCol] ?? '').replace(/"/g, '""').trim() : ''
+
+      if (!id && !title) continue
+      csvLines.push(`"${id}","${title}","${desc}","${cat}"`)
+    }
+
+    return csvLines.join('\n')
+  } catch {
+    return null
+  }
+}
 
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
@@ -74,23 +132,36 @@ export async function POST(req: NextRequest) {
 
   try {
     if (format === 'xlsx') {
-      // XLSX: we can't easily parse binary in edge runtime without a library.
-      // Return error asking for CSV export — mark upload as failed.
-      await db
-        .update(frameworkUploads)
-        .set({ status: 'failed', errorMessage: 'XLSX parsing requires server-side processing. Please export to CSV first.' })
-        .where(eq(frameworkUploads.id, uploadRecord.id))
+      // Parse XLSX using dynamic import of the xlsx package
+      const buffer = Buffer.from(await file.arrayBuffer())
+      const csvContent = await parseXlsx(buffer)
 
-      return NextResponse.json(
-        {
-          error: 'XLSX parsing requires CSV conversion. Please export the spreadsheet as CSV and re-upload.',
-          uploadId: uploadRecord.id,
-        },
-        { status: 422 }
-      )
+      if (csvContent === null) {
+        // xlsx package not available or parsing failed
+        await db
+          .update(frameworkUploads)
+          .set({
+            status: 'failed',
+            errorMessage: 'XLSX parsing unavailable. Please install the xlsx package (npm install xlsx) or export to CSV.',
+          })
+          .where(eq(frameworkUploads.id, uploadRecord.id))
+
+        return NextResponse.json(
+          {
+            error: 'XLSX parsing is not available in this deployment. Please export your spreadsheet as CSV and re-upload, or contact your administrator to install the xlsx package.',
+            hint: 'Export the spreadsheet as CSV: File → Save As → CSV (Comma delimited)',
+            uploadId: uploadRecord.id,
+          },
+          { status: 422 }
+        )
+      }
+
+      // Successfully parsed XLSX as CSV — continue processing as CSV
+      content = csvContent
+      format = 'csv' // treat as CSV from here on
+    } else {
+      content = await file.text()
     }
-
-    content = await file.text()
   } catch {
     await db
       .update(frameworkUploads)
@@ -139,7 +210,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     uploadId: uploadRecord.id,
     filename: file.name,
-    format,
+    format: file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls') ? 'xlsx' : format,
     detectedFramework: detectedSlug,
     validation: {
       valid: validation.valid,

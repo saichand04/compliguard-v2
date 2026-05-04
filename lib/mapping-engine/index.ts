@@ -26,6 +26,7 @@ import {
   type CanonicalControl,
   type MappingRule,
 } from '@/lib/db/schema/mapping_engine'
+import { systemSettings } from '@/lib/db/schema/system_settings'
 import { eq, or, and, inArray } from 'drizzle-orm'
 import { decodeHitrustId, normalizeToCanonical, isHitrustId } from './hitrust-decoder'
 import { lookupByScfId, lookupByNistFamily, SCF_CROSSWALK } from './scf-crosswalk'
@@ -239,8 +240,9 @@ export class MappingEngine {
   }
 
   /**
-   * Suggest mappings for a control using SCF crosswalk and AI placeholder.
+   * Suggest mappings for a control using SCF crosswalk and AI engine.
    * Returns MappingSuggestionResult[] sorted by confidence descending.
+   * Also sets `this._lastAiConfigRequired` if AI is not configured.
    */
   async suggestMappings(controlId: string): Promise<MappingSuggestionResult[]> {
     // Get the control and its framework
@@ -393,19 +395,241 @@ export class MappingEngine {
       .where(eq(mappingRules.nistId, nistId.toUpperCase()))
   }
 
-  // ── Private: AI placeholder ───────────────────────────────────────────────
+  // ── Private: AI engine ───────────────────────────────────────────────────
 
   /**
-   * AI-suggested mappings — Phase 1 placeholder.
-   * Will be wired to an LLM in Phase 2+.
+   * Read AI provider configuration from system_settings.
+   * Returns null if no provider is configured, along with a configRequired flag.
+   */
+  private async _getAiConfig(): Promise<{
+    provider: 'openai' | 'gemini' | null
+    apiKey: string | null
+    model: string | null
+    configRequired: boolean
+  }> {
+    const rows = await db.select().from(systemSettings).limit(1)
+    const settings = rows[0]
+
+    if (!settings) {
+      return { provider: null, apiKey: null, model: null, configRequired: true }
+    }
+
+    const provider = settings.aiProvider as 'openai' | 'gemini' | null
+    // API key is stored in extraConfig to avoid a dedicated column
+    const extraConfig = settings.extraConfig as Record<string, string> | null
+    const apiKey = extraConfig?.aiApiKey ?? null
+    const model = settings.aiModel ?? null
+
+    if (!provider || !apiKey) {
+      return { provider, apiKey, model, configRequired: true }
+    }
+
+    return { provider, apiKey, model, configRequired: false }
+  }
+
+  /**
+   * AI-suggested mappings.
+   * Calls the configured AI provider (OpenAI or Gemini) to suggest mappings
+   * for the given control. Falls back to an empty array if AI is not configured.
+   *
+   * Returns suggestions tagged with { configRequired: true } via the engine when
+   * no provider is set up — callers should surface this to the user.
    */
   private async _aiSuggestMappings(
-    _controlId: string,
-    _canonical: ResolvedCanonical
+    controlId: string,
+    canonical: ResolvedCanonical
   ): Promise<MappingSuggestionResult[]> {
-    // TODO: Phase 2 — call AI provider with control text + canonical context
-    return []
+    const aiConfig = await this._getAiConfig()
+
+    // Expose configRequired flag through a module-level var so callers can check
+    this._lastAiConfigRequired = aiConfig.configRequired
+
+    if (aiConfig.configRequired) {
+      return []
+    }
+
+    // Fetch the source control details
+    const [controlRow] = await db
+      .select({ control: controls, framework: frameworks })
+      .from(controls)
+      .innerJoin(frameworks, eq(controls.frameworkId, frameworks.id))
+      .where(eq(controls.id, controlId))
+      .limit(1)
+
+    if (!controlRow) return []
+
+    // Fetch candidate target controls (up to 40 controls from other frameworks)
+    const targetControls = await db
+      .select({ control: controls, framework: frameworks })
+      .from(controls)
+      .innerJoin(frameworks, eq(controls.frameworkId, frameworks.id))
+      .where(
+        and(
+          // exclude the same framework
+          eq(frameworks.isActive, true)
+        )
+      )
+      .limit(40)
+
+    // Filter out controls from the same framework
+    const candidates = targetControls.filter(
+      (r) => r.framework.id !== controlRow.framework.id
+    )
+
+    if (candidates.length === 0) return []
+
+    const sourceControl = controlRow.control
+    const candidateList = candidates
+      .map((r) => `${r.control.controlId ?? r.control.id} — ${r.control.title} [${r.framework.shortName ?? r.framework.name}]`)
+      .join('\n')
+
+    const systemPrompt =
+      'You are a compliance control mapping expert. Given a source control, identify the most relevant target framework controls. Return JSON only.'
+
+    const userPrompt = `Source control:
+ID: ${sourceControl.controlId ?? sourceControl.id}
+Title: ${sourceControl.title}
+Description: ${sourceControl.description ?? '(none)'}
+Canonical NIST anchor: ${canonical.nistId ?? canonical.family ?? 'unknown'}
+
+Target framework controls (ID — Title [Framework]):
+${candidateList}
+
+Return a JSON object in this exact format (no markdown, no extra text):
+{
+  "mappings": [
+    {
+      "targetRef": "<control ID from the list above>",
+      "confidence": <integer 0-100>,
+      "mappingType": "direct" | "partial" | "related",
+      "rationale": "<one sentence explaining the relationship>"
+    }
+  ]
+}
+
+Return only the top 5 most relevant mappings. Omit controls with confidence below 40.`
+
+    try {
+      let rawJson: string | null = null
+
+      if (aiConfig.provider === 'openai') {
+        const model = aiConfig.model ?? 'gpt-4o-mini'
+        const res = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${aiConfig.apiKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            max_tokens: 1024,
+            temperature: 0.1,
+          }),
+        })
+
+        if (!res.ok) {
+          console.error('[MappingEngine] OpenAI error:', res.status, await res.text())
+          return []
+        }
+
+        const data = await res.json()
+        rawJson = data.choices?.[0]?.message?.content ?? null
+
+      } else if (aiConfig.provider === 'gemini') {
+        const model = aiConfig.model ?? 'gemini-2.0-flash'
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${aiConfig.apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: systemPrompt }] },
+              contents: [{ parts: [{ text: userPrompt }] }],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+            }),
+          }
+        )
+
+        if (!res.ok) {
+          console.error('[MappingEngine] Gemini error:', res.status, await res.text())
+          return []
+        }
+
+        const data = await res.json()
+        rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text ?? null
+      }
+
+      if (!rawJson) return []
+
+      // Strip any markdown code fences the model may have added
+      const cleaned = rawJson.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim()
+      const parsed = JSON.parse(cleaned) as {
+        mappings: Array<{
+          targetRef: string
+          confidence: number
+          mappingType: 'direct' | 'partial' | 'related'
+          rationale: string
+        }>
+      }
+
+      if (!Array.isArray(parsed.mappings)) return []
+
+      // Match targetRef back to actual DB control IDs
+      const suggestions: MappingSuggestionResult[] = []
+
+      for (const m of parsed.mappings) {
+        // Find the candidate whose controlId or id matches the returned ref
+        const match = candidates.find(
+          (c) =>
+            c.control.controlId === m.targetRef ||
+            c.control.id === m.targetRef ||
+            (c.control.controlId && m.targetRef.startsWith(c.control.controlId))
+        )
+
+        if (!match) continue
+
+        suggestions.push({
+          targetControlId: match.control.id,
+          targetFramework: match.framework.name,
+          targetControlRef: match.control.controlId,
+          targetTitle: match.control.title,
+          confidence: Math.min(100, Math.max(0, m.confidence)),
+          rationale: m.rationale,
+          suggestedBy: 'ai',
+        })
+      }
+
+      // Persist suggestions to mapping_suggestions table
+      if (suggestions.length > 0) {
+        await db
+          .insert(mappingSuggestions)
+          .values(
+            suggestions.map((s) => ({
+              sourceControlId: controlId,
+              targetControlId: s.targetControlId,
+              confidence: s.confidence,
+              rationale: s.rationale,
+              suggestedBy: 'ai' as const,
+              status: 'pending' as const,
+            }))
+          )
+          .onConflictDoNothing()
+      }
+
+      return suggestions
+    } catch (err) {
+      console.error('[MappingEngine] AI suggest error:', err)
+      return []
+    }
   }
+
+  // Tracks whether the last AI suggestion call required config (not configured)
+  // Exposed so callers (API routes) can surface this to clients.
+  _lastAiConfigRequired = false
 }
 
 // ── Singleton export ──────────────────────────────────────────────────────────

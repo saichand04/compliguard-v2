@@ -142,7 +142,7 @@ export default function FrameworkUploadPage() {
           Upload Framework
         </h1>
         <p style={{ fontSize: 13.5, color: 'var(--text-muted)' }}>
-          Import a custom compliance framework via CSV or JSON. The mapping engine will automatically resolve NIST canonical anchors.
+          Import a custom compliance framework via CSV, JSON, or XLSX. The mapping engine will automatically resolve NIST canonical anchors.
         </p>
       </div>
 
@@ -179,7 +179,7 @@ export default function FrameworkUploadPage() {
               {dragOver ? 'Drop to upload' : 'Drag & drop your framework file'}
             </div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>
-              CSV, JSON, or XLSX — maximum 5MB
+              CSV, JSON, or XLSX (Excel) — maximum 5MB
             </div>
             <button
               className="btn-primary"
@@ -195,7 +195,7 @@ export default function FrameworkUploadPage() {
             {[
               { format: 'CSV', icon: '📊', desc: 'Spreadsheet export with columns: ID, Title, Description, Category' },
               { format: 'JSON', icon: '{}', desc: 'Array of control objects with id/title/description fields' },
-              { format: 'XLSX', icon: '📋', desc: 'Excel format — will be converted to CSV internally' },
+              { format: 'XLSX', icon: '📋', desc: 'Excel format — columns auto-detected: ID, Title, Description, Category' },
             ].map(({ format, icon, desc }) => (
               <div key={format} className="glass-card" style={{ padding: '14px 16px' }}>
                 <div style={{ fontSize: 18, marginBottom: 6 }}>{icon}</div>

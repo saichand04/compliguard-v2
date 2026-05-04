@@ -1,245 +1,355 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   CheckSquare, Search, ChevronRight, Link2, Shield,
-  BookOpen, ExternalLink, Filter, Tag, Zap, GitBranch,
+  BookOpen, ExternalLink, Filter, Tag, Zap, GitBranch, RefreshCw,
+  AlertTriangle, Clock, CheckCircle2, XCircle, Circle,
 } from 'lucide-react'
+import { CommentsPanel } from '@/components/comments/comments-panel'
 
-// ── Demo data ─────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
-const DEMO_FRAMEWORKS = [
-  { id: 'nist',    name: 'NIST 800-53 Rev 5', shortName: 'NIST',    color: 'var(--violet)',  controls: 1189, mapped: 1189 },
-  { id: 'hitrust', name: 'HITRUST CSF v11',   shortName: 'HITRUST', color: 'var(--cyan)',    controls: 833,  mapped: 712 },
-  { id: 'iso',     name: 'ISO 27001:2022',    shortName: 'ISO27K',  color: 'var(--emerald)', controls: 93,   mapped: 89 },
-  { id: 'soc2',    name: 'SOC 2 Type II',     shortName: 'SOC2',    color: 'var(--amber)',   controls: 64,   mapped: 61 },
-  { id: 'pci',     name: 'PCI DSS v4.0',      shortName: 'PCI',     color: 'var(--rose)',    controls: 286,  mapped: 201 },
-]
-
-interface DemoControl {
+interface Framework {
   id: string
-  ref: string
+  name: string
+  shortName: string | null
+  slug: string | null
+}
+
+interface Control {
+  id: string
+  controlId: string | null
   title: string
-  category: string
-  description: string
-  canonicalNist: string
-  mappedCount: number
-  status: 'implemented' | 'in_progress' | 'not_started' | 'needs_review'
+  description: string | null
+  category: string | null
+  frameworkId: string
+  assignment?: {
+    status: string
+    assignedTo: string | null
+  } | null
+  mappingCount?: number
 }
 
-const DEMO_CONTROLS: Record<string, DemoControl[]> = {
-  nist: [
-    { id: '1', ref: 'AC-1',  title: 'Access Control Policy and Procedures', category: 'Access Control', description: 'Develop, document, and disseminate access control policy and procedures.', canonicalNist: 'AC-1',  mappedCount: 8,  status: 'implemented' },
-    { id: '2', ref: 'AC-2',  title: 'Account Management',                   category: 'Access Control', description: 'Manage information system accounts, including establishing, activating, modifying, reviewing, disabling, and removing accounts.', canonicalNist: 'AC-2',  mappedCount: 12, status: 'implemented' },
-    { id: '3', ref: 'AC-3',  title: 'Access Enforcement',                   category: 'Access Control', description: 'Enforce approved authorizations for logical access to information and system resources.', canonicalNist: 'AC-3',  mappedCount: 9,  status: 'in_progress' },
-    { id: '4', ref: 'AC-6',  title: 'Least Privilege',                      category: 'Access Control', description: 'Employ the principle of least privilege, allowing only authorized accesses for users.', canonicalNist: 'AC-6',  mappedCount: 11, status: 'implemented' },
-    { id: '5', ref: 'SI-2',  title: 'Flaw Remediation',                     category: 'System Integrity', description: 'Identify, report, and correct information system flaws.', canonicalNist: 'SI-2',  mappedCount: 7,  status: 'needs_review' },
-    { id: '6', ref: 'SI-3',  title: 'Malicious Code Protection',            category: 'System Integrity', description: 'Implement malicious code protection mechanisms at system entry and exit points.', canonicalNist: 'SI-3',  mappedCount: 6,  status: 'in_progress' },
-    { id: '7', ref: 'IR-4',  title: 'Incident Handling',                    category: 'Incident Response', description: 'Implement an incident handling capability for security incidents.', canonicalNist: 'IR-4',  mappedCount: 8,  status: 'not_started' },
-    { id: '8', ref: 'CM-2',  title: 'Baseline Configuration',               category: 'Config Mgmt', description: 'Develop, document, and maintain a current baseline configuration of the system.', canonicalNist: 'CM-2',  mappedCount: 5,  status: 'implemented' },
-  ],
-  hitrust: [
-    { id: 'h1', ref: '09.ab.01', title: 'User Registration and De-Registration', category: 'Access Control', description: 'Implement a formal user registration and de-registration process for granting and revoking access to all information systems and services.', canonicalNist: 'AC-2', mappedCount: 6, status: 'implemented' },
-    { id: 'h2', ref: '09.ac.01', title: 'User Password Management',              category: 'Access Control', description: 'Use a formal management process to control passwords in the information system.', canonicalNist: 'IA-5', mappedCount: 4, status: 'in_progress' },
-    { id: 'h3', ref: '01.a.01',  title: 'Information Security Policy',           category: 'Policy',         description: 'An information security policy document shall be approved by management, published and communicated.', canonicalNist: 'PM-1', mappedCount: 5, status: 'implemented' },
-    { id: 'h4', ref: '08.a.01',  title: 'Reporting Information Security Events', category: 'Incident Mgmt',  description: 'Information security events shall be reported through appropriate management channels as quickly as possible.', canonicalNist: 'IR-6', mappedCount: 7, status: 'needs_review' },
-  ],
-  iso: [
-    { id: 'i1', ref: 'A.5.1',  title: 'Policies for Information Security',     category: 'Org Policies',  description: 'Information security policy and topic-specific policies shall be defined, approved by management.', canonicalNist: 'PM-1', mappedCount: 8,  status: 'implemented' },
-    { id: 'i2', ref: 'A.9.1',  title: 'Access Control Policy',                 category: 'Access Control', description: 'Access control rules, rights and restrictions shall be established based on business and information security requirements.', canonicalNist: 'AC-1', mappedCount: 6,  status: 'implemented' },
-    { id: 'i3', ref: 'A.12.6', title: 'Management of Technical Vulnerabilities', category: 'Operations',    description: 'Information about technical vulnerabilities of information systems in use shall be obtained in a timely fashion.', canonicalNist: 'SI-2', mappedCount: 4,  status: 'in_progress' },
-  ],
-  soc2: [
-    { id: 's1', ref: 'CC1.1', title: 'COSO Principle 1',  category: 'CC1', description: 'The entity demonstrates a commitment to integrity and ethical values.', canonicalNist: 'PM-1', mappedCount: 3, status: 'implemented' },
-    { id: 's2', ref: 'CC6.1', title: 'Logical Access Controls', category: 'CC6', description: 'The entity implements logical access security software, infrastructure, and architectures.', canonicalNist: 'AC-1', mappedCount: 9, status: 'implemented' },
-    { id: 's3', ref: 'CC7.2', title: 'Monitoring of System Components', category: 'CC7', description: 'The entity monitors system components and the operation of those controls.', canonicalNist: 'SI-4', mappedCount: 6, status: 'in_progress' },
-  ],
-  pci: [
-    { id: 'p1', ref: '1.1.1', title: 'Firewall Configuration Standards', category: 'Network Security', description: 'A formal process exists for approving and testing all network connections and changes to firewall and router configurations.', canonicalNist: 'SC-7', mappedCount: 5, status: 'implemented' },
-    { id: 'p2', ref: '3.4.1', title: 'Encryption of Stored Cardholder Data', category: 'Data Protection', description: 'Primary account number (PAN) is masked when displayed such that only personnel with a legitimate need can see more than the first six/last four digits.', canonicalNist: 'SC-28', mappedCount: 7, status: 'needs_review' },
-  ],
+interface MappingTarget {
+  id: string
+  controlId: string | null
+  title: string
+  frameworkId: string
+  frameworkName: string
+  frameworkShortName: string | null
+  mappingType: string | null
+  confidence: number | null
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  implemented: 'var(--emerald)',
-  in_progress: 'var(--amber)',
-  not_started: 'var(--text-muted)',
-  needs_review: 'var(--rose)',
+type StatusFilter = 'all' | 'implemented' | 'in_progress' | 'not_started' | 'needs_review'
+
+// ── Status helpers ─────────────────────────────────────────────────────────────
+
+const STATUS_META: Record<string, { label: string; color: string; Icon: React.ElementType }> = {
+  implemented:  { label: 'Implemented',  color: 'var(--emerald)', Icon: CheckCircle2 },
+  in_progress:  { label: 'In Progress',  color: 'var(--amber)',   Icon: Clock },
+  not_started:  { label: 'Not Started',  color: 'var(--text-muted)', Icon: Circle },
+  needs_review: { label: 'Needs Review', color: 'var(--rose)',    Icon: AlertTriangle },
+  not_applicable: { label: 'N/A',        color: 'var(--text-muted)', Icon: XCircle },
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  implemented: 'Implemented',
-  in_progress: 'In Progress',
-  not_started: 'Not Started',
-  needs_review: 'Needs Review',
+function StatusPill({ status }: { status: string }) {
+  const meta = STATUS_META[status] ?? STATUS_META.not_started
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 4,
+      padding: '2px 8px', borderRadius: 20,
+      background: `${meta.color}18`, border: `1px solid ${meta.color}40`,
+      color: meta.color, fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+    }}>
+      <meta.Icon size={10} />
+      {meta.label}
+    </span>
+  )
 }
 
-// ── Page component ────────────────────────────────────────────────────────────
+// ── Confidence bar ─────────────────────────────────────────────────────────────
+
+function ConfBar({ value }: { value: number }) {
+  const color = value >= 80 ? 'var(--emerald)' : value >= 60 ? 'var(--amber)' : 'var(--rose)'
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ flex: 1, height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${value}%`, background: color, borderRadius: 2, transition: 'width 0.4s' }} />
+      </div>
+      <span style={{ fontSize: 11, color, fontWeight: 600, minWidth: 28 }}>{value}%</span>
+    </div>
+  )
+}
+
+const MAPPING_TYPE_COLORS: Record<string, string> = {
+  direct: 'var(--emerald)', partial: 'var(--amber)', related: 'var(--cyan)', inferred: 'var(--violet)',
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 
 export default function ControlsPage() {
-  const [selectedFramework, setSelectedFramework] = useState<string>('nist')
-  const [selectedControl, setSelectedControl] = useState<DemoControl | null>(null)
-  const [search, setSearch] = useState('')
+  const [frameworks, setFrameworks]             = useState<Framework[]>([])
+  const [selectedFwId, setSelectedFwId]         = useState<string | null>(null)
+  const [controls, setControls]                 = useState<Control[]>([])
+  const [selectedControl, setSelectedControl]   = useState<Control | null>(null)
+  const [mappings, setMappings]                 = useState<MappingTarget[]>([])
+  const [search, setSearch]                     = useState('')
+  const [statusFilter, setStatusFilter]         = useState<StatusFilter>('all')
+  const [loadingFw, setLoadingFw]               = useState(true)
+  const [loadingCtrl, setLoadingCtrl]           = useState(false)
+  const [loadingMap, setLoadingMap]             = useState(false)
+  const [updating, setUpdating]                 = useState(false)
 
-  const frameworkControls = DEMO_CONTROLS[selectedFramework] ?? []
-  const filtered = frameworkControls.filter(
-    (c) =>
-      !search ||
-      c.ref.toLowerCase().includes(search.toLowerCase()) ||
-      c.title.toLowerCase().includes(search.toLowerCase()) ||
-      c.category.toLowerCase().includes(search.toLowerCase())
-  )
+  // ── Load frameworks on mount ───────────────────────────────────────────────
 
-  const activeFramework = DEMO_FRAMEWORKS.find((f) => f.id === selectedFramework)
+  useEffect(() => {
+    fetch('/api/frameworks')
+      .then((r) => r.json())
+      .then((data) => {
+        const list: Framework[] = Array.isArray(data.frameworks) ? data.frameworks : []
+        setFrameworks(list)
+        if (list.length > 0) setSelectedFwId(list[0].id)
+      })
+      .catch(console.error)
+      .finally(() => setLoadingFw(false))
+  }, [])
+
+  // ── Load controls when framework changes ──────────────────────────────────
+
+  useEffect(() => {
+    if (!selectedFwId) return
+    setLoadingCtrl(true)
+    setSelectedControl(null)
+    setMappings([])
+
+    fetch(`/api/controls?frameworkId=${selectedFwId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const list: Control[] = Array.isArray(data.controls) ? data.controls : []
+        setControls(list)
+      })
+      .catch(console.error)
+      .finally(() => setLoadingCtrl(false))
+  }, [selectedFwId])
+
+  // ── Load mappings when control is selected ────────────────────────────────
+
+  const loadMappings = useCallback((controlId: string) => {
+    setLoadingMap(true)
+    fetch(`/api/mappings?controlId=${controlId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const list: MappingTarget[] = Array.isArray(data.mappings) ? data.mappings : []
+        setMappings(list)
+      })
+      .catch(console.error)
+      .finally(() => setLoadingMap(false))
+  }, [])
+
+  const handleSelectControl = (ctrl: Control) => {
+    setSelectedControl(ctrl)
+    loadMappings(ctrl.id)
+  }
+
+  // ── Update status ──────────────────────────────────────────────────────────
+
+  const updateStatus = async (controlId: string, newStatus: string) => {
+    setUpdating(true)
+    try {
+      await fetch(`/api/controls/${controlId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      // Refresh controls list
+      const data = await fetch(`/api/controls?frameworkId=${selectedFwId}`).then((r) => r.json())
+      const list: Control[] = Array.isArray(data.controls) ? data.controls : []
+      setControls(list)
+      // Update selected control in state
+      const updated = list.find((c) => c.id === controlId)
+      if (updated) setSelectedControl(updated)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  // ── Filtered controls ──────────────────────────────────────────────────────
+
+  const filtered = controls.filter((c) => {
+    const q = search.toLowerCase()
+    if (q && !c.title.toLowerCase().includes(q) && !(c.controlId ?? '').toLowerCase().includes(q) && !(c.category ?? '').toLowerCase().includes(q)) return false
+    if (statusFilter !== 'all' && c.assignment?.status !== statusFilter) return false
+    return true
+  })
+
+  // ── Summary stats ──────────────────────────────────────────────────────────
+
+  const stats = {
+    total:       controls.length,
+    implemented: controls.filter((c) => c.assignment?.status === 'implemented').length,
+    inProgress:  controls.filter((c) => c.assignment?.status === 'in_progress').length,
+    notStarted:  controls.filter((c) => c.assignment?.status === 'not_started').length,
+    needsReview: controls.filter((c) => c.assignment?.status === 'needs_review').length,
+  }
+  const pct = stats.total > 0 ? Math.round((stats.implemented / stats.total) * 100) : 0
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div
-      className="animate-fade-in"
-      style={{
-        height: 'calc(100vh - 64px)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}
-    >
-      {/* ── Page header ──────────────────────────────────── */}
-      <div style={{ marginBottom: 16, flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em', marginBottom: 3 }}>
-              Controls Library
-            </h1>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              Browse, search, and trace cross-framework control mappings
-            </p>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 0, overflow: 'hidden' }}>
+
+      {/* Header */}
+      <div style={{ padding: '20px 24px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--violet-dim)', border: '1px solid rgba(139,92,246,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckSquare size={15} style={{ color: 'var(--violet)' }} />
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn-ghost" style={{ fontSize: 12, padding: '7px 12px' }}>
-              <Filter size={13} /> Filter
-            </button>
-            <a href="/frameworks/upload" className="btn-primary" style={{ fontSize: 12, padding: '7px 14px', textDecoration: 'none' }}>
-              <Shield size={13} /> Upload Framework
-            </a>
+          <div>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>Controls Library</h1>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0 }}>Browse, track, and manage compliance controls</p>
           </div>
         </div>
       </div>
 
-      {/* ── 3-column layout ───────────────────────────────── */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '220px 1fr 380px', gap: 12, overflow: 'hidden', minHeight: 0 }}>
+      {/* Body — 3-column layout */}
+      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: 0 }}>
 
-        {/* ── Column 1: Framework list ───────────────────── */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px 8px' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)', padding: '0 8px', marginBottom: 8 }}>
-            Frameworks
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {DEMO_FRAMEWORKS.map((fw) => {
-              const active = fw.id === selectedFramework
-              const pct = Math.round((fw.mapped / fw.controls) * 100)
-              return (
-                <button
-                  key={fw.id}
-                  onClick={() => { setSelectedFramework(fw.id); setSelectedControl(null) }}
-                  style={{
-                    width: '100%',
-                    textAlign: 'left',
-                    background: active ? 'var(--bg-surface-active)' : 'transparent',
-                    border: `1px solid ${active ? 'var(--border-active)' : 'transparent'}`,
-                    borderRadius: 'var(--radius-md)',
-                    padding: '9px 10px',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                    marginBottom: 2,
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <div style={{ width: 7, height: 7, borderRadius: '50%', background: fw.color, flexShrink: 0 }} />
-                    <span style={{ fontSize: 12.5, fontWeight: active ? 600 : 450, color: active ? 'var(--violet)' : 'var(--text-secondary)', flex: 1 }}>
-                      {fw.shortName}
-                    </span>
-                    <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{pct}%</span>
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-muted)', paddingLeft: 15, marginBottom: 5 }}>
-                    {fw.controls.toLocaleString()} controls
-                  </div>
-                  <div style={{ paddingLeft: 15 }}>
-                    <div className="progress-track" style={{ height: 3 }}>
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+        {/* ── Column 1: Framework selector ─────────────────────────────── */}
+        <div style={{ width: 200, borderRight: '1px solid var(--border-glass)', overflowY: 'auto', flexShrink: 0, padding: '12px 8px' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.08em', textTransform: 'uppercase', padding: '4px 8px 8px' }}>Frameworks</div>
+          {loadingFw ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} style={{ height: 44, borderRadius: 8, background: 'rgba(255,255,255,0.04)', margin: '4px 0', animation: 'pulse 1.5s ease-in-out infinite' }} />
+            ))
+          ) : frameworks.length === 0 ? (
+            <div style={{ padding: '12px 8px', fontSize: 12, color: 'var(--text-muted)' }}>No frameworks — upload one first</div>
+          ) : (
+            frameworks.map((fw) => (
+              <button
+                key={fw.id}
+                onClick={() => setSelectedFwId(fw.id)}
+                style={{
+                  width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                  background: selectedFwId === fw.id ? 'var(--violet-dim)' : 'transparent',
+                  color: selectedFwId === fw.id ? 'var(--violet)' : 'var(--text-secondary)',
+                  fontSize: 12, fontWeight: selectedFwId === fw.id ? 600 : 400,
+                  marginBottom: 2, transition: 'background 0.15s, color 0.15s',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                <Shield size={12} style={{ flexShrink: 0 }} />
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fw.shortName ?? fw.name}</span>
+              </button>
+            ))
+          )}
         </div>
 
-        {/* ── Column 2: Controls list ────────────────────── */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {/* Search bar */}
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-glass)', flexShrink: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ flex: 1, position: 'relative' }}>
-                <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input
-                  className="cg-input"
-                  placeholder={`Search ${activeFramework?.name ?? ''} controls…`}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  style={{ paddingLeft: 32, fontSize: 12.5, padding: '7px 10px 7px 32px' }}
-                />
+        {/* ── Column 2: Controls list ───────────────────────────────────── */}
+        <div style={{ flex: 1, borderRight: '1px solid var(--border-glass)', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
+
+          {/* Stats bar */}
+          {!loadingCtrl && controls.length > 0 && (
+            <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-glass)', display: 'flex', gap: 20, flexShrink: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{stats.total}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</span>
               </div>
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                {filtered.length} results
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--emerald)' }}>{stats.implemented}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Done</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--amber)' }}>{stats.inProgress}</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>WIP</span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--violet)' }}>{pct}%</span>
+                <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Complete</span>
+              </div>
             </div>
+          )}
+
+          {/* Search + filter */}
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-glass)', display: 'flex', gap: 8, flexShrink: 0 }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search controls…"
+                style={{
+                  width: '100%', padding: '6px 10px 6px 28px', borderRadius: 8, fontSize: 12,
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)',
+                  color: 'var(--text-primary)', outline: 'none', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+              style={{
+                padding: '6px 10px', borderRadius: 8, fontSize: 12,
+                background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border-glass)',
+                color: 'var(--text-secondary)', outline: 'none', cursor: 'pointer',
+              }}
+            >
+              <option value="all">All Status</option>
+              <option value="implemented">Implemented</option>
+              <option value="in_progress">In Progress</option>
+              <option value="not_started">Not Started</option>
+              <option value="needs_review">Needs Review</option>
+            </select>
           </div>
 
-          {/* Control list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
-            {filtered.length === 0 ? (
-              <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-                No controls match your search
+          {/* List */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+            {loadingCtrl ? (
+              Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} style={{ margin: '4px 12px', height: 52, borderRadius: 8, background: 'rgba(255,255,255,0.04)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              ))
+            ) : filtered.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                {controls.length === 0 ? 'No controls found — select a framework or upload one.' : 'No controls match your filters.'}
               </div>
             ) : (
-              filtered.map((control) => {
-                const isSelected = selectedControl?.id === control.id
+              filtered.map((ctrl) => {
+                const isActive = selectedControl?.id === ctrl.id
+                const status = ctrl.assignment?.status ?? 'not_started'
+                const meta = STATUS_META[status] ?? STATUS_META.not_started
                 return (
                   <button
-                    key={control.id}
-                    onClick={() => setSelectedControl(control)}
+                    key={ctrl.id}
+                    onClick={() => handleSelectControl(ctrl)}
                     style={{
-                      width: '100%',
-                      textAlign: 'left',
-                      background: isSelected ? 'var(--bg-surface-active)' : 'transparent',
-                      border: `1px solid ${isSelected ? 'var(--border-active)' : 'transparent'}`,
-                      borderRadius: 'var(--radius-md)',
-                      padding: '10px 12px',
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                      marginBottom: 2,
+                      width: '100%', textAlign: 'left', padding: '10px 14px', border: 'none', cursor: 'pointer',
+                      background: isActive ? 'rgba(139,92,246,0.10)' : 'transparent',
+                      borderLeft: isActive ? '2px solid var(--violet)' : '2px solid transparent',
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8,
+                      transition: 'background 0.12s',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
-                          <code style={{ fontSize: 11, fontWeight: 600, color: isSelected ? 'var(--violet)' : 'var(--cyan)', background: 'rgba(6,182,212,0.12)', padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>
-                            {control.ref}
-                          </code>
-                          <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {control.title}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        {ctrl.controlId && (
+                          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--violet)', background: 'var(--violet-dim)', padding: '1px 6px', borderRadius: 4 }}>
+                            {ctrl.controlId}
                           </span>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{control.category}</span>
-                          <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'var(--text-muted)', flexShrink: 0 }} />
-                          <span style={{ fontSize: 10.5, color: STATUS_COLORS[control.status] }}>{STATUS_LABELS[control.status]}</span>
-                        </div>
+                        )}
+                        {ctrl.category && (
+                          <span style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ctrl.category}</span>
+                        )}
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-                        <Link2 size={11} style={{ color: 'var(--text-muted)' }} />
-                        <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{control.mappedCount}</span>
-                        <ChevronRight size={12} style={{ color: 'var(--text-muted)' }} />
+                      <div style={{ fontSize: 12.5, fontWeight: isActive ? 600 : 400, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {ctrl.title}
                       </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <meta.Icon size={12} style={{ color: meta.color }} />
+                      <ChevronRight size={12} style={{ color: 'var(--text-muted)', opacity: isActive ? 1 : 0 }} />
                     </div>
                   </button>
                 )
@@ -248,138 +358,136 @@ export default function ControlsPage() {
           </div>
         </div>
 
-        {/* ── Column 3: Mapping panel ────────────────────── */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {selectedControl ? (
+        {/* ── Column 3: Detail panel ────────────────────────────────────── */}
+        <div style={{ width: 380, overflowY: 'auto', flexShrink: 0, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {!selectedControl ? (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, padding: 32, color: 'var(--text-muted)' }}>
+              <BookOpen size={32} style={{ opacity: 0.3 }} />
+              <p style={{ fontSize: 13, textAlign: 'center', margin: 0 }}>Select a control to view details, mappings, and comments</p>
+            </div>
+          ) : (
             <>
-              {/* Control header */}
-              <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-glass)', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <code style={{ fontSize: 11, fontWeight: 600, color: 'var(--cyan)', background: 'rgba(6,182,212,0.12)', padding: '2px 7px', borderRadius: 4 }}>
-                    {selectedControl.ref}
-                  </code>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: STATUS_COLORS[selectedControl.status] }} />
-                  <span style={{ fontSize: 10.5, color: STATUS_COLORS[selectedControl.status] }}>
-                    {STATUS_LABELS[selectedControl.status]}
-                  </span>
-                </div>
-                <h3 style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6, lineHeight: 1.35 }}>
-                  {selectedControl.title}
-                </h3>
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  {selectedControl.description}
-                </p>
-              </div>
-
-              {/* Canonical NIST anchor */}
-              <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--border-glass)', flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 24, height: 24, background: 'var(--violet-dim)', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <BookOpen size={11} style={{ color: 'var(--violet)' }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>NIST Canonical Anchor</div>
-                    <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--violet)' }}>{selectedControl.canonicalNist}</div>
+              {/* Title block */}
+              <div className="glass-card" style={{ padding: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    {selectedControl.controlId && (
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--violet)', marginBottom: 4 }}>{selectedControl.controlId}</div>
+                    )}
+                    <h2 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', margin: 0, lineHeight: 1.4 }}>{selectedControl.title}</h2>
                   </div>
                 </div>
-              </div>
-
-              {/* Cross-framework mappings */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                  <GitBranch size={12} style={{ color: 'var(--text-muted)' }} />
-                  <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                    Cross-Framework Mappings
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: 10.5, color: 'var(--text-muted)' }}>
-                    {selectedControl.mappedCount} controls
-                  </span>
-                </div>
-
-                {/* Demo mapped controls */}
-                {[
-                  { fw: 'HITRUST', ref: '09.ab.01', type: 'direct', conf: 92 },
-                  { fw: 'ISO 27001', ref: 'A.9.2.1', type: 'direct', conf: 88 },
-                  { fw: 'SOC 2', ref: 'CC6.2', type: 'partial', conf: 74 },
-                  { fw: 'PCI DSS', ref: '8.1.1', type: 'partial', conf: 71 },
-                  { fw: 'CMMC', ref: 'AC.1.001', type: 'direct', conf: 95 },
-                ].map((m, i) => {
-                  const confColor = m.conf >= 80 ? 'var(--emerald)' : m.conf >= 50 ? '#FBBF24' : '#F97316'
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '8px 10px',
-                        background: 'var(--bg-elevated)',
-                        border: '1px solid var(--border-glass)',
-                        borderRadius: 'var(--radius-md)',
-                        marginBottom: 6,
-                        cursor: 'pointer',
-                        transition: 'border-color 0.15s ease',
-                      }}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255,255,255,0.07)', padding: '1px 5px', borderRadius: 3 }}>
-                            {m.fw}
-                          </span>
-                          <code style={{ fontSize: 11, color: 'var(--cyan)' }}>{m.ref}</code>
-                        </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>
-                          {m.type === 'direct' ? 'Direct mapping' : 'Partial mapping'} via NIST {selectedControl.canonicalNist}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: confColor }}>{m.conf}%</span>
-                        <span style={{ fontSize: 9.5, color: confColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{m.type}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-
-                {/* AI suggestions section */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 16, marginBottom: 10 }}>
-                  <Zap size={11} style={{ color: 'var(--violet)' }} />
-                  <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                    AI Suggestions
-                  </span>
-                  <span style={{ marginLeft: 'auto', fontSize: 10, padding: '1px 6px', background: 'var(--violet-dim)', color: 'var(--violet)', borderRadius: 99, border: '1px solid rgba(139,92,246,0.25)' }}>
-                    Phase 2
-                  </span>
-                </div>
-                <div style={{ padding: '12px', background: 'var(--violet-dim)', border: '1px solid rgba(139,92,246,0.20)', borderRadius: 'var(--radius-md)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  AI-powered mapping suggestions will be available in Phase 2. The mapping engine is currently using SCF crosswalk data for automated resolution.
+                {selectedControl.description && (
+                  <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 10px' }}>{selectedControl.description}</p>
+                )}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {selectedControl.category && (
+                    <span style={{ fontSize: 11, color: 'var(--cyan)', background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.25)', padding: '2px 8px', borderRadius: 20, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <Tag size={9} /> {selectedControl.category}
+                    </span>
+                  )}
                 </div>
               </div>
+
+              {/* Status */}
+              <div className="glass-card" style={{ padding: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Implementation Status</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {(['not_started', 'in_progress', 'implemented', 'needs_review', 'not_applicable'] as const).map((s) => {
+                    const m = STATUS_META[s]
+                    const current = (selectedControl.assignment?.status ?? 'not_started') === s
+                    return (
+                      <button
+                        key={s}
+                        onClick={() => updateStatus(selectedControl.id, s)}
+                        disabled={updating}
+                        style={{
+                          padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, cursor: updating ? 'not-allowed' : 'pointer',
+                          background: current ? `${m.color}20` : 'transparent',
+                          border: `1px solid ${current ? m.color : 'var(--border-glass)'}`,
+                          color: current ? m.color : 'var(--text-muted)',
+                          transition: 'all 0.15s', opacity: updating ? 0.6 : 1,
+                        }}
+                      >
+                        {m.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* Mappings */}
+              <div className="glass-card" style={{ padding: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Link2 size={11} /> Cross-Framework Mappings
+                  </div>
+                  <button onClick={() => loadMappings(selectedControl.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+                    <RefreshCw size={11} />
+                  </button>
+                </div>
+                {loadingMap ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} style={{ height: 32, borderRadius: 6, background: 'rgba(255,255,255,0.04)', marginBottom: 6, animation: 'pulse 1.5s ease-in-out infinite' }} />
+                  ))
+                ) : mappings.length === 0 ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', padding: '12px 0' }}>
+                    No mappings yet — use the Mapping Explorer or AI Suggest
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {mappings.map((m) => (
+                      <div key={m.id} style={{ padding: '8px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-glass)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--violet)' }}>{m.controlId ?? '—'}</span>
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{m.frameworkShortName ?? m.frameworkName}</span>
+                          </div>
+                          {m.mappingType && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: MAPPING_TYPE_COLORS[m.mappingType] ?? 'var(--text-muted)', background: `${MAPPING_TYPE_COLORS[m.mappingType] ?? 'var(--text-muted)'}18`, padding: '1px 6px', borderRadius: 4 }}>
+                              {m.mappingType}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.4 }}>{m.title}</div>
+                        {m.confidence !== null && <ConfBar value={m.confidence} />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Comments */}
+              <CommentsPanel entityType="control" entityId={selectedControl.id} compact />
 
               {/* Actions */}
-              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--border-glass)', flexShrink: 0, display: 'flex', gap: 8 }}>
-                <button className="btn-primary" style={{ flex: 1, fontSize: 12, padding: '8px 12px' }}>
-                  <Link2 size={12} /> Add Mapping
-                </button>
-                <button className="btn-ghost" style={{ fontSize: 12, padding: '8px 12px' }}>
-                  <ExternalLink size={12} />
-                </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a
+                  href={`/mappings?controlId=${selectedControl.id}`}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    background: 'var(--violet-dim)', border: '1px solid rgba(139,92,246,0.3)',
+                    color: 'var(--violet)', textDecoration: 'none', textAlign: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <GitBranch size={12} /> Mapping Explorer
+                </a>
+                <a
+                  href={`/soa?controlId=${selectedControl.id}`}
+                  style={{
+                    flex: 1, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                    background: 'rgba(6,182,212,0.10)', border: '1px solid rgba(6,182,212,0.25)',
+                    color: 'var(--cyan)', textDecoration: 'none', textAlign: 'center',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                  }}
+                >
+                  <ExternalLink size={12} /> View in SOA
+                </a>
               </div>
             </>
-          ) : (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, textAlign: 'center' }}>
-              <div style={{ width: 48, height: 48, background: 'var(--violet-dim)', border: '1px solid rgba(139,92,246,0.20)', borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
-                <CheckSquare size={20} style={{ color: 'var(--violet)' }} />
-              </div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
-                Select a control
-              </div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                Choose a control from the list to view its cross-framework mappings, canonical NIST anchor, and evidence inheritance chain.
-              </div>
-            </div>
           )}
         </div>
-
       </div>
     </div>
   )

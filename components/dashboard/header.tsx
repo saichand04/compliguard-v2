@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { Bell, ChevronDown, LogOut, Settings, User, Search, Command } from 'lucide-react'
+import { Bell, ChevronDown, LogOut, Settings, User, Search, Command, CheckCheck } from 'lucide-react'
 
 interface HeaderProps {
   firstName: string
@@ -11,12 +11,50 @@ interface HeaderProps {
   role: string
 }
 
+interface Notification {
+  id: string
+  type: string
+  title: string
+  body: string | null
+  link: string | null
+  isRead: boolean
+  createdAt: string
+}
+
 const ROLE_BADGE: Record<string, { label: string; color: string; bg: string; border: string }> = {
   super_admin:  { label: 'Super Admin',  color: '#C4B5FD', bg: 'rgba(139,92,246,0.18)', border: 'rgba(139,92,246,0.30)' },
   admin:        { label: 'Admin',        color: '#C4B5FD', bg: 'rgba(139,92,246,0.15)', border: 'rgba(139,92,246,0.25)' },
   auditor:      { label: 'Auditor',      color: '#67E8F9', bg: 'rgba(6,182,212,0.18)',  border: 'rgba(6,182,212,0.30)' },
   contributor:  { label: 'Contributor',  color: '#6EE7B7', bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.25)' },
   viewer:       { label: 'Viewer',       color: '#94A3B8', bg: 'rgba(148,163,184,0.12)',border: 'rgba(148,163,184,0.20)' },
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  control_overdue:   'var(--amber)',
+  evidence_rejected: 'var(--rose)',
+  evidence_approved: 'var(--emerald)',
+  evidence_request:  '#67E8F9',
+  new_finding:       'var(--rose)',
+  policy_expiry:     'var(--amber)',
+  task_assigned:     'var(--violet)',
+  task_overdue:      'var(--rose)',
+  risk_identified:   'var(--rose)',
+  vendor_review_due: 'var(--amber)',
+  system:            'var(--cyan)',
+  mention:           'var(--violet)',
+  invite:            'var(--emerald)',
+}
+
+function getTypeColor(type: string) {
+  return TYPE_COLORS[type] ?? 'var(--cyan)'
+}
+
+function timeAgo(dateStr: string): string {
+  const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
+  if (diff < 60) return `${diff}s ago`
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
 function Breadcrumb({ pathname }: { pathname: string }) {
@@ -51,7 +89,59 @@ export function DashboardHeader({ firstName, lastName, email, role }: HeaderProp
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [searchFocused, setSearchFocused] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
-  const notificationCount = 3 // demo value
+
+  // Real notifications state
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [markingAll, setMarkingAll] = useState(false)
+
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await fetch('/api/notifications')
+      if (!res.ok) return
+      const data = await res.json()
+      setNotifications(data.notifications || [])
+      setUnreadCount(data.unreadCount || 0)
+    } catch {
+      // silent — don't break the header
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 60_000)
+    return () => clearInterval(interval)
+  }, [fetchNotifications])
+
+  const markAllAsRead = async (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setMarkingAll(true)
+    try {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      })
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+      setUnreadCount(0)
+    } finally {
+      setMarkingAll(false)
+    }
+  }
+
+  const handleNotifClick = async (n: Notification) => {
+    if (!n.isRead) {
+      await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [n.id] }),
+      })
+      setNotifications((prev) => prev.map((x) => x.id === n.id ? { ...x, isRead: true } : x))
+      setUnreadCount((c) => Math.max(0, c - 1))
+    }
+    setNotifOpen(false)
+    if (n.link) router.push(n.link)
+  }
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' })
@@ -60,6 +150,9 @@ export function DashboardHeader({ firstName, lastName, email, role }: HeaderProp
 
   const initials = `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase() || email.charAt(0).toUpperCase()
   const roleBadge = ROLE_BADGE[role] || ROLE_BADGE['viewer']
+
+  // Last 5 notifications for dropdown
+  const dropdownNotifs = notifications.slice(0, 5)
 
   return (
     <header
@@ -134,7 +227,7 @@ export function DashboardHeader({ firstName, lastName, email, role }: HeaderProp
           style={{ position: 'relative' }}
         >
           <Bell size={16} />
-          {notificationCount > 0 && (
+          {unreadCount > 0 && (
             <span style={{
               position: 'absolute',
               top: 5,
@@ -158,45 +251,151 @@ export function DashboardHeader({ firstName, lastName, email, role }: HeaderProp
                 position: 'absolute',
                 right: 0,
                 top: 'calc(100% + 8px)',
-                width: 320,
+                width: 340,
                 borderRadius: 'var(--radius-lg)',
                 zIndex: 50,
                 overflow: 'hidden',
               }}
             >
+              {/* Header */}
               <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-glass)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-primary)' }}>Notifications</span>
-                  <span className="badge badge-rose">{notificationCount} new</span>
-                </div>
-              </div>
-              {[
-                { title: 'Evidence due in 3 days', desc: 'AC-2 — Access Management', color: 'var(--amber)', time: '2h ago' },
-                { title: 'New control mapping available', desc: 'HITRUST ↔ NIST 800-53 AC-2', color: 'var(--violet)', time: '5h ago' },
-                { title: 'Risk review required', desc: 'High severity — Data Exposure', color: 'var(--rose)', time: '1d ago' },
-              ].map((n, i) => (
-                <div key={i} style={{
-                  padding: '12px 16px',
-                  borderBottom: '1px solid var(--border-glass)',
-                  cursor: 'pointer',
-                  transition: 'background 0.12s',
-                }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '')}
-                >
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: n.color, marginTop: 5, flexShrink: 0, boxShadow: `0 0 6px ${n.color}` }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)' }}>{n.title}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 1 }}>{n.desc}</div>
-                    </div>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>{n.time}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {unreadCount > 0 && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 7px',
+                          borderRadius: 99,
+                          background: 'rgba(239,68,68,0.15)',
+                          color: '#F87171',
+                          border: '1px solid rgba(239,68,68,0.30)',
+                        }}
+                      >
+                        {unreadCount} new
+                      </span>
+                    )}
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllAsRead}
+                        disabled={markingAll}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--text-muted)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontSize: 11,
+                          padding: 0,
+                          fontFamily: 'Inter, sans-serif',
+                          transition: 'color 0.12s',
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--violet)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
+                        title="Mark all as read"
+                      >
+                        <CheckCheck size={12} />
+                        {markingAll ? '…' : 'All read'}
+                      </button>
+                    )}
                   </div>
                 </div>
-              ))}
+              </div>
+
+              {/* Notification items */}
+              {dropdownNotifs.length === 0 ? (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12.5 }}>
+                  No notifications yet
+                </div>
+              ) : (
+                dropdownNotifs.map((n) => (
+                  <div
+                    key={n.id}
+                    onClick={() => handleNotifClick(n)}
+                    style={{
+                      padding: '11px 16px',
+                      borderBottom: '1px solid var(--border-glass)',
+                      cursor: 'pointer',
+                      transition: 'background 0.12s',
+                      background: !n.isRead ? 'rgba(139,92,246,0.04)' : undefined,
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-surface-hover)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = !n.isRead ? 'rgba(139,92,246,0.04)' : '')}
+                  >
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <div
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: '50%',
+                          background: getTypeColor(n.type),
+                          marginTop: 5,
+                          flexShrink: 0,
+                          boxShadow: !n.isRead ? `0 0 6px ${getTypeColor(n.type)}` : 'none',
+                          opacity: n.isRead ? 0.4 : 1,
+                        }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: n.isRead ? 400 : 500,
+                            color: n.isRead ? 'var(--text-muted)' : 'var(--text-primary)',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {n.title}
+                        </div>
+                        {n.body && (
+                          <div
+                            style={{
+                              fontSize: 11.5,
+                              color: 'var(--text-muted)',
+                              marginTop: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {n.body}
+                          </div>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
+                        {timeAgo(n.createdAt)}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+
+              {/* Footer */}
               <div style={{ padding: '10px 16px', textAlign: 'center' }}>
-                <button style={{ fontSize: 12, color: 'var(--violet)', background: 'none', border: 'none', cursor: 'pointer' }}>
-                  View all notifications
+                <button
+                  onClick={() => { setNotifOpen(false); router.push('/notifications') }}
+                  style={{
+                    fontSize: 12,
+                    color: 'var(--violet)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    fontFamily: 'Inter, sans-serif',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    margin: '0 auto',
+                    transition: 'opacity 0.12s',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
+                  onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                >
+                  View all notifications →
                 </button>
               </div>
             </div>

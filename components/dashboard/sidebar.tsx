@@ -3,10 +3,10 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Shield, CheckSquare, Link2, FileText, AlertTriangle,
-  ScrollText, ClipboardList, Users2, Search, Bug, UsersRound,
+  LayoutDashboard, Shield, FileText, AlertTriangle,
+  ScrollText, ClipboardList, Users2, Search, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
-  Zap, GitBranch, Library, Map, Upload,
+  Zap, Library, Map, Upload, Bell, FileCheck, Eye,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
@@ -16,44 +16,47 @@ const NAV_GROUPS = [
     items: [
       { href: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard },
       { href: '/reports',        label: 'Reports',        icon: BarChart3 },
+      { href: '/notifications',  label: 'Notifications',  icon: Bell },
     ],
   },
   {
     label: 'Compliance',
     items: [
-      { href: '/frameworks',        label: 'Frameworks',      icon: Shield },
-      { href: '/evidence',          label: 'Evidence',        icon: FileText },
-      { href: '/policies',          label: 'Policies',        icon: ScrollText },
+      { href: '/frameworks',        label: 'Frameworks',       icon: Shield },
+      { href: '/evidence',          label: 'Evidence',         icon: FileText },
+      { href: '/policies',          label: 'Policies',         icon: ScrollText },
+      { href: '/soa',               label: 'Statement of App', icon: FileCheck },
+      { href: '/audit',             label: 'Auditor View',     icon: Eye },
     ],
   },
   {
     label: 'Controls',
     items: [
-      { href: '/controls',          label: 'Controls Library',icon: Library },
-      { href: '/mappings',          label: 'Mapping Explorer',icon: Map },
-      { href: '/frameworks/upload', label: 'Upload Framework', icon: Upload },
+      { href: '/controls',          label: 'Controls Library',  icon: Library },
+      { href: '/mappings',          label: 'Mapping Explorer',  icon: Map },
+      { href: '/frameworks/upload', label: 'Upload Framework',  icon: Upload },
     ],
   },
   {
     label: 'Risk & Audit',
     items: [
-      { href: '/risks',          label: 'Risks',          icon: AlertTriangle },
-      { href: '/findings',       label: 'Findings',       icon: Search },
-      { href: '/tasks',          label: 'Tasks',          icon: ClipboardList },
+      { href: '/risks',    label: 'Risks',    icon: AlertTriangle },
+      { href: '/findings', label: 'Findings', icon: Search },
+      { href: '/tasks',    label: 'Tasks',    icon: ClipboardList },
     ],
   },
   {
     label: 'Organization',
     items: [
-      { href: '/vendors',        label: 'Vendors',        icon: Users2 },
-      { href: '/people',         label: 'People',         icon: UsersRound },
+      { href: '/vendors', label: 'Vendors', icon: Users2 },
+      { href: '/people',  label: 'People',  icon: UsersRound },
     ],
   },
   {
     label: 'Platform',
     items: [
-      { href: '/integrations',   label: 'Integrations',   icon: Plug },
-      { href: '/settings',       label: 'Settings',       icon: Settings },
+      { href: '/integrations', label: 'Integrations', icon: Plug },
+      { href: '/settings',     label: 'Settings',     icon: Settings },
     ],
   },
 ]

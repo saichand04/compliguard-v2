@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { notifications } from '@/lib/db/schema'
-import { eq, and, count } from 'drizzle-orm'
+import { eq, and, count, desc, inArray } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 
 /**
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
     .select()
     .from(notifications)
     .where(eq(notifications.userId, session.userId))
-    .orderBy(notifications.createdAt)
+    .orderBy(desc(notifications.createdAt))
     .limit(50)
 
   const [unreadRow] = await db
@@ -47,13 +47,57 @@ export async function PATCH(req: NextRequest) {
       .set({ isRead: true, readAt: new Date() })
       .where(and(eq(notifications.userId, session.userId), eq(notifications.isRead, false)))
   } else if (Array.isArray(body.ids) && body.ids.length > 0) {
-    for (const id of body.ids) {
-      await db
-        .update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(eq(notifications.id, id), eq(notifications.userId, session.userId)))
-    }
+    await db
+      .update(notifications)
+      .set({ isRead: true, readAt: new Date() })
+      .where(
+        and(
+          eq(notifications.userId, session.userId),
+          inArray(notifications.id, body.ids)
+        )
+      )
+  } else {
+    return ApiErrors.badRequest('Provide { ids: string[] } or { all: true }')
   }
 
   return NextResponse.json({ ok: true })
+}
+
+/**
+ * POST /api/notifications
+ * Create a notification (internal use / seeding / testing).
+ * Body matches notifications schema fields.
+ */
+export async function POST(req: NextRequest) {
+  const session = await requireAuth(req)
+  if (!session) return ApiErrors.unauthorized()
+
+  // Only admins can create notifications via API (for seeding)
+  if (!['admin', 'super_admin'].includes(session.role)) {
+    return ApiErrors.forbidden()
+  }
+
+  const body = await req.json()
+
+  const { type, title, body: notifBody, link, userId, organizationId, metadata } = body
+
+  if (!type || !title || !userId || !organizationId) {
+    return ApiErrors.badRequest('type, title, userId, and organizationId are required')
+  }
+
+  const [created] = await db
+    .insert(notifications)
+    .values({
+      type,
+      title,
+      body: notifBody,
+      link,
+      userId,
+      organizationId,
+      metadata,
+      isRead: false,
+    })
+    .returning()
+
+  return NextResponse.json({ notification: created }, { status: 201 })
 }
