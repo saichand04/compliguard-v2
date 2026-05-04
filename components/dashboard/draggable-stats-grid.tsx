@@ -2,14 +2,26 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { StatsCard } from './stats-card'
-import { type LucideIcon } from 'lucide-react'
+import { TrendingUp, CheckSquare, AlertTriangle, FileText, Shield, BarChart3, Activity, Zap, type LucideIcon } from 'lucide-react'
 
-interface StatItem {
+// Icon registry — maps string names sent from server to actual components
+const ICON_MAP: Record<string, LucideIcon> = {
+  TrendingUp,
+  CheckSquare,
+  AlertTriangle,
+  FileText,
+  Shield,
+  BarChart3,
+  Activity,
+  Zap,
+}
+
+export interface StatItem {
   title: string
   value: string | number
   subtitle?: string
   trend?: { value: number; label: string }
-  icon: LucideIcon
+  iconName: string          // string key from ICON_MAP — safe to cross RSC boundary
   accentColor?: 'violet' | 'cyan' | 'emerald' | 'amber' | 'rose'
 }
 
@@ -119,7 +131,11 @@ export function DraggableStatsGrid({ stats, storageKey = STORAGE_KEY }: Draggabl
               cursor: isDragging ? 'grabbing' : 'grab',
             }}
           >
-            <StatsCard {...stat} delay={visualIdx * 60} />
+            <StatsCard
+              {...stat}
+              icon={ICON_MAP[stat.iconName] ?? FileText}
+              delay={visualIdx * 60}
+            />
           </div>
         )
       })}

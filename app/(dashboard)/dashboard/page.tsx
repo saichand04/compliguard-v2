@@ -4,18 +4,19 @@ import { FrameworkProgressCard } from '@/components/dashboard/framework-progress
 import { DraggableStatsGrid } from '@/components/dashboard/draggable-stats-grid'
 import {
   Shield, CheckSquare, AlertTriangle, FileText,
-  Link2, TrendingUp, Activity, Clock, ArrowRight,
+  Link2, Activity, ArrowRight,
   Zap, GitBranch, ChevronRight,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
 // ── Demo data (replaced by real DB queries once DB is connected) ──
+// Use iconName strings (not components) so these are safe to pass to a Client Component
 const STATS = [
-  { title: 'Compliance Score',  value: '84%',  subtitle: 'Across all frameworks',      trend: { value: 3.2, label: 'vs last month' }, icon: TrendingUp,    accentColor: 'violet' as const },
-  { title: 'Active Controls',   value: '1,247',subtitle: '312 need evidence',          trend: { value: 1.8, label: 'vs last week' },  icon: CheckSquare,   accentColor: 'cyan' as const },
-  { title: 'Open Risks',        value: '23',   subtitle: '5 critical, 18 medium',      trend: { value: -2,  label: 'vs last week' },  icon: AlertTriangle, accentColor: 'amber' as const },
-  { title: 'Evidence Items',    value: '4,891',subtitle: '143 pending review',         trend: { value: 7.1, label: 'this week' },     icon: FileText,      accentColor: 'emerald' as const },
+  { title: 'Compliance Score',  value: '84%',  subtitle: 'Across all frameworks',   trend: { value: 3.2, label: 'vs last month' }, iconName: 'TrendingUp',    accentColor: 'violet'  as const },
+  { title: 'Active Controls',   value: '1,247',subtitle: '312 need evidence',        trend: { value: 1.8, label: 'vs last week' },  iconName: 'CheckSquare',   accentColor: 'cyan'    as const },
+  { title: 'Open Risks',        value: '23',   subtitle: '5 critical, 18 medium',   trend: { value: -2,  label: 'vs last week' },  iconName: 'AlertTriangle', accentColor: 'amber'   as const },
+  { title: 'Evidence Items',    value: '4,891',subtitle: '143 pending review',       trend: { value: 7.1, label: 'this week' },     iconName: 'FileText',      accentColor: 'emerald' as const },
 ]
 
 const FRAMEWORKS = [
