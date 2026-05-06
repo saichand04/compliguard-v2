@@ -69,9 +69,14 @@ print_center() {
 }
 
 hr() {
-  local char="${1:-─}"
+  local char="${1:--}"
   local color="${2:-$DARK}"
   local width="${3:-80}"
+  # Use ASCII fallback chars to avoid Unicode rendering issues on non-UTF8 terminals
+  case "$char" in
+    '─'|'═') char='-' ;;
+    '╗'|'|'|'╔'|'╚'|'╝'|'╠'|'╣') char='|' ;;
+  esac
   echo -e "${color}$(printf '%*s' "$width" | tr ' ' "$char")${RESET}"
 }
 
@@ -90,10 +95,12 @@ badge() {
 step_header() {
   local num="$1"
   local title="$2"
+  local pad=$(( 68 - ${#title} - 8 ))
+  [[ $pad -lt 0 ]] && pad=0
   echo ""
-  echo -e "${VIOLET}${BOLD}╔══════════════════════════════════════════════════════════════════════════════╗${RESET}"
-  echo -e "${VIOLET}${BOLD}║${RESET}  ${CYAN}${BOLD}STEP ${num}${RESET}${WHITE}${BOLD}  ${title}$(printf '%*s' $((68 - ${#title} - 8)) '')${VIOLET}${BOLD}║${RESET}"
-  echo -e "${VIOLET}${BOLD}╚══════════════════════════════════════════════════════════════════════════════╝${RESET}"
+  echo -e "${VIOLET}${BOLD}+------------------------------------------------------------------------------+${RESET}"
+  echo -e "${VIOLET}${BOLD}|${RESET}  ${CYAN}${BOLD}STEP ${num}${RESET}${WHITE}${BOLD}  ${title}$(printf '%*s' $pad '')${VIOLET}${BOLD}|${RESET}"
+  echo -e "${VIOLET}${BOLD}+------------------------------------------------------------------------------+${RESET}"
   echo ""
 }
 
@@ -223,10 +230,10 @@ show_banner() {
   echo ""
   echo -e "${VIOLET}${BOLD}"
   echo '  ██████╗ ██████╗ ███╗   ███╗██████╗ ██╗     ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗ '
-  echo '  ██╔════╝██╔═══██╗████╗ ████║██╔══██╗██║     ██║██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗'
-  echo '  ██║     ██║   ██║██╔████╔██║██████╔╝██║     ██║██║  ███╗██║   ██║███████║██████╔╝██║  ██║'
-  echo '  ██║     ██║   ██║██║╚██╔╝██║██╔═══╝ ██║     ██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║'
-  echo '  ╚██████╗╚██████╔╝██║ ╚═╝ ██║██║     ███████╗██║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝'
+  echo '  ██╔════╝██╔═══██╗████╗ ████|██╔══██╗██|     ██|██╔════╝ ██|   ██|██╔══██╗██╔══██╗██╔══██╗'
+  echo '  ██|     ██|   ██|██╔████╔██|██████╔╝██|     ██|██|  ███╗██|   ██|███████|██████╔╝██|  ██|'
+  echo '  ██|     ██|   ██|██|╚██╔╝██|██╔═══╝ ██|     ██|██|   ██|██|   ██|██╔══██|██╔══██╗██|  ██|'
+  echo '  ╚██████╗╚██████╔╝██| ╚═╝ ██|██|     ███████╗██|╚██████╔╝╚██████╔╝██|  ██|██|  ██|██████╔╝'
   echo '   ╚═════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚══════╝╚═╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝ '
   echo -e "${RESET}"
   echo -e "${CYAN}${BOLD}"
@@ -236,7 +243,7 @@ show_banner() {
   print_center "v2.0  ·  Interactive Deployment Wizard  ·  Apache 2.0" 94
   echo -e "${RESET}"
   echo ""
-  hr "═" "$VIOLET" 94
+  hr "-" "$VIOLET" 94
   echo ""
 }
 
@@ -278,8 +285,30 @@ run_preflight() {
   if [[ -f "$PROJECT_DIR/docker-compose.yml" ]]; then
     badge ok "Project root: $PROJECT_DIR"
   else
-    badge err "docker-compose.yml not found in $PROJECT_DIR"
-    failed=true
+    # Script may have been downloaded standalone (not inside the repo)
+    # Try common locations before failing
+    for candidate in \
+        "$(pwd)" \
+        "$HOME/compliguard-v2" \
+        "/opt/compliguard" \
+        "/opt/compliguard-v2" \
+        "/home/compliguard" \
+        "/root/compliguard-v2"; do
+      if [[ -f "$candidate/docker-compose.yml" ]]; then
+        PROJECT_DIR="$candidate"
+        badge warn "Script running standalone — using project root: $PROJECT_DIR"
+        break
+      fi
+    done
+    if [[ ! -f "$PROJECT_DIR/docker-compose.yml" ]]; then
+      badge err "docker-compose.yml not found. This script must run from inside the CompliGuard repo."
+      echo ""
+      echo -e "  ${GOLD}${BOLD}  Fix: clone the repo first, then run the script from it:${RESET}"
+      echo -e "  ${CYAN}    git clone https://github.com/saichand04/compliguard-v2.git /opt/compliguard${RESET}"
+      echo -e "  ${CYAN}    cd /opt/compliguard && bash scripts/deploy.sh${RESET}"
+      echo ""
+      failed=true
+    fi
   fi
 
   # openssl for secret generation
@@ -760,19 +789,19 @@ show_summary() {
   local pg_pass_masked
   pg_pass_masked="$(mask_secret "$POSTGRES_PASSWORD")"
 
-  echo -e "${BOLD}${WHITE}  ╔══════════════════════════════════════════════════════════════╗${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}                                                              ${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}  ${CYAN}${BOLD}App URL    ${RESET}  ${WHITE}${app_url}$(printf '%*s' $((40 - ${#app_url})) '')${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}  ${VIOLET}${BOLD}Admin      ${RESET}  ${WHITE}admin@compliguard.local$(printf '%*s' $((40 - 23)) '')${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}Welcome@123$(printf '%*s' $((40 - 11)) '')${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}  ${CYAN}${BOLD}DB Pass    ${RESET}  ${GRAY}${pg_pass_masked}$(printf '%*s' $((40 - ${#pg_pass_masked})) '')${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}  ${GREEN}${BOLD}Env File   ${RESET}  ${WHITE}${PROJECT_DIR}/.env$(printf '%*s' $((40 - ${#PROJECT_DIR} - 5)) '')${BOLD}${WHITE}║${RESET}"
-  echo -e "${BOLD}${WHITE}  ║${RESET}                                                              ${BOLD}${WHITE}║${RESET}"
+  echo -e "${BOLD}${WHITE}  +--------------------------------------------------------------+${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}App URL    ${RESET}  ${WHITE}${app_url}$(printf '%*s' $((40 - ${#app_url})) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Admin      ${RESET}  ${WHITE}admin@compliguard.local$(printf '%*s' $((40 - 23)) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}Welcome@123$(printf '%*s' $((40 - 11)) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}DB Pass    ${RESET}  ${GRAY}${pg_pass_masked}$(printf '%*s' $((40 - ${#pg_pass_masked})) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${GREEN}${BOLD}Env File   ${RESET}  ${WHITE}${PROJECT_DIR}/.env$(printf '%*s' $((40 - ${#PROJECT_DIR} - 5)) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
   if [[ "$DEPLOY_MODE" == "fullstack" ]]; then
-    echo -e "${BOLD}${WHITE}  ║${RESET}  ${GOLD}${BOLD}MinIO UI   ${RESET}  ${WHITE}http://${DOMAIN}:9001$(printf '%*s' $((40 - ${#DOMAIN} - 16)) '')${BOLD}${WHITE}║${RESET}"
-    echo -e "${BOLD}${WHITE}  ║${RESET}                                                              ${BOLD}${WHITE}║${RESET}"
+    echo -e "${BOLD}${WHITE}  |${RESET}  ${GOLD}${BOLD}MinIO UI   ${RESET}  ${WHITE}http://${DOMAIN}:9001$(printf '%*s' $((40 - ${#DOMAIN} - 16)) '')${BOLD}${WHITE}|${RESET}"
+    echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
   fi
-  echo -e "${BOLD}${WHITE}  ╚══════════════════════════════════════════════════════════════╝${RESET}"
+  echo -e "${BOLD}${WHITE}  +--------------------------------------------------------------+${RESET}"
 
   echo ""
   echo -e "  ${WHITE}${BOLD}Useful commands:${RESET}"
