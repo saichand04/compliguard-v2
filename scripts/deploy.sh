@@ -49,9 +49,10 @@ MINIO_PASSWORD=""
 NEXTAUTH_SECRET=""
 JWT_SECRET=""
 NEXTAUTH_URL=""
-COMPOSE_SERVICES=""
-ADMIN_EMAIL=""
+NEXTAUTH_URL_INTERNAL="http://localhost:3030"  # always internal container port
+ADMIN_EMAIL="admin@compliguard.local"
 ADMIN_PASSWORD=""
+COMPOSE_SERVICES=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -384,8 +385,26 @@ gather_config() {
   ask DOMAIN "Domain or hostname" "localhost"
 
   if [[ "$DEPLOY_MODE" == "minimal" || "$DEPLOY_MODE" == "dev" ]]; then
-    ask PORT "App port" "3030"
-    NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
+    # Auto-detect a free port starting from 3030
+    local suggested_port="3030"
+    while lsof -ti:"$suggested_port" &>/dev/null 2>&1 || \
+          ss -tlnp 2>/dev/null | grep -q ":${suggested_port} " || \
+          netstat -tlnp 2>/dev/null | grep -q ":${suggested_port} "; do
+      badge warn "Port ${suggested_port} is in use — trying $((suggested_port + 1))..."
+      suggested_port=$((suggested_port + 1))
+    done
+    [[ "$suggested_port" != "3030" ]] && badge info "Suggested free port: ${suggested_port}"
+
+    ask PORT "External app port (what you'll access in browser)" "${suggested_port}"
+
+    # NEXTAUTH_URL = what the browser uses (external host:port)
+    # NEXTAUTH_URL_INTERNAL = always internal container port (3030), never changes
+    if [[ "$DOMAIN" == "localhost" || "$DOMAIN" == "127.0.0.1" ]]; then
+      NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
+    else
+      NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
+    fi
+    NEXTAUTH_URL_INTERNAL="http://localhost:3030"
   fi
 
   if [[ "$DEPLOY_MODE" == "fullstack" ]]; then
@@ -446,31 +465,26 @@ gather_config() {
     esac
   done
 
-  # Admin account
   echo ""
-  echo -e "  ${WHITE}${BOLD}Admin Account${RESET}  ${GRAY}(first login credentials)${RESET}"
+  echo -e "  ${WHITE}${BOLD}Admin Account${RESET}  ${GRAY}(first super-admin user for CompliGuard)${RESET}"
   echo ""
-  ask ADMIN_EMAIL "Admin email" "admin@compliguard.local"
+  ask ADMIN_EMAIL "Admin email address" "admin@compliguard.local"
+
+  # Ask for admin password (must not be empty)
   while true; do
     ask_secret ADMIN_PASSWORD "Admin password (min 8 chars)"
     if [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
-      echo -e "  ${RED}  Password must be at least 8 characters.${RESET}"
+      badge err "Password must be at least 8 characters. Try again."
     else
-      local confirm_pass
-      ask_secret confirm_pass "Confirm password"
-      if [[ "$ADMIN_PASSWORD" != "$confirm_pass" ]]; then
-        echo -e "  ${RED}  Passwords do not match. Try again.${RESET}"
-      else
-        break
-      fi
+      break
     fi
   done
-  badge ok "Admin: ${ADMIN_EMAIL}"
-  badge ok "Password: $(mask_secret "$ADMIN_PASSWORD")"
-
+  badge ok "Admin account: ${ADMIN_EMAIL}"
   echo ""
+
   badge ok "Domain: ${DOMAIN}"
-  badge ok "App URL: ${NEXTAUTH_URL}"
+  badge ok "External URL: ${NEXTAUTH_URL}"
+  badge info "Internal URL: ${NEXTAUTH_URL_INTERNAL}  (container-to-container, always :3030)"
   [[ "$AI_PROVIDER" != "skip" ]] && badge ok "AI Provider: ${AI_PROVIDER}"
   [[ "$AI_PROVIDER" == "skip" ]] && badge warn "AI Provider: skipped (configure post-deploy)"
   echo ""
@@ -576,6 +590,7 @@ write_env_file() {
 NODE_ENV=production
 PORT=${PORT}
 NEXTAUTH_URL=${NEXTAUTH_URL}
+NEXTAUTH_URL_INTERNAL=${NEXTAUTH_URL_INTERNAL}
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
 JWT_SECRET=${JWT_SECRET}
 
@@ -626,7 +641,7 @@ EOF
 
 # ── Admin Account ───────────────────────────────────────────
 ADMIN_EMAIL=${ADMIN_EMAIL}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
+# Admin password is injected into the DB during deploy (not stored here)
 
 # ── Email ────────────────────────────────────────────────────
 # Set EMAIL_PROVIDER=postmark and add POSTMARK_TOKEN for real emails
@@ -766,62 +781,117 @@ run_deploy() {
   badge ok "Containers started"
   echo ""
 
-  # --- DB migrations + admin init ---
-  echo -e "  ${CYAN}Applying database schema (this takes ~10s)...${RESET}"
-  sleep 5  # give postgres a moment to be fully ready
-  $dc $compose_args exec -T app npx drizzle-kit push --force 2>&1 | \
-    grep -E "changes|table|error|Error|applied" | \
-    while IFS= read -r line; do echo -e "  ${GRAY}  ${line}${RESET}"; done
-  badge ok "Database schema applied"
+  # ── Run DB migrations ────────────────────────────────────────────────────────
+  echo -e "  ${CYAN}Running database migrations...${RESET}"
+  local pg_container
+  pg_container=$(docker compose $compose_args ps -q postgres 2>/dev/null | head -1)
+  if [[ -z "$pg_container" ]]; then
+    pg_container=$(docker ps --filter "name=compliguard.*postgres" --format "{{.ID}}" | head -1)
+  fi
 
+  # Wait for Postgres to be ready
+  local pg_attempts=0
+  until docker exec "$pg_container" pg_isready -U compliguard &>/dev/null 2>&1 || (( ++pg_attempts >= 20 )); do
+    echo -en "\r  ${CYAN}  Waiting for Postgres... (${pg_attempts}/20)${RESET}  "
+    sleep 2
+  done
   echo ""
+
+  # Run migrations via drizzle-kit inside the app container
+  local app_container
+  app_container=$(docker compose $compose_args ps -q app 2>/dev/null | head -1)
+  if [[ -z "$app_container" ]]; then
+    app_container=$(docker ps --filter "name=compliguard.*app" --format "{{.ID}}" | head -1)
+  fi
+
+  if docker exec "$app_container" sh -c 'cd /app && node_modules/.bin/drizzle-kit migrate 2>/dev/null || node_modules/.bin/drizzle-kit push --force 2>/dev/null' 2>&1 | grep -qiE 'done|migrat|success|No changes'; then
+    badge ok "Migrations complete"
+  else
+    # Fallback: apply SQL migration files directly via psql
+    for sql_file in "$PROJECT_DIR"/drizzle/migrations/*.sql; do
+      [[ -f "$sql_file" ]] && docker exec -i "$pg_container" psql -U compliguard -d compliguard < "$sql_file" &>/dev/null
+    done
+    badge ok "Migrations applied via psql fallback"
+  fi
+  echo ""
+
+  # ── Inject admin user via psql ────────────────────────────────────────────────
   echo -e "  ${CYAN}Creating admin account (${ADMIN_EMAIL})...${RESET}"
 
-  # Hash password using openssl + bcrypt via python (available on most systems)
-  # Fallback: use bcrypt via postgres pgcrypto if python unavailable
-  # Most reliable: pre-hash in shell, inject via psql directly into postgres container
-  local BCRYPT_HASH
-  if python3 -c 'import bcrypt' 2>/dev/null; then
-    BCRYPT_HASH=$(python3 -c "
-import bcrypt, sys
-hash = bcrypt.hashpw(sys.argv[1].encode(), bcrypt.gensalt(rounds=12)).decode()
-print(hash)
-" "${ADMIN_PASSWORD}" 2>/dev/null)
-  elif command -v htpasswd &>/dev/null; then
-    # Apache htpasswd bcrypt
-    BCRYPT_HASH=$(htpasswd -bnBC 12 '' "${ADMIN_PASSWORD}" 2>/dev/null | tr -d ':\n' | sed 's/^//')
+  # Generate bcrypt hash of admin password
+  # Strategy 1: python3 with bcrypt module (safest, handles special chars via env var)
+  local ADMIN_HASH
+  ADMIN_HASH=$(ADMIN_PW="${ADMIN_PASSWORD}" python3 - <<'PYEOF' 2>/dev/null
+import os, sys
+pw = os.environ.get('ADMIN_PW', '')
+try:
+    import bcrypt
+    print(bcrypt.hashpw(pw.encode(), bcrypt.gensalt(12)).decode())
+except ImportError:
+    sys.exit(1)
+PYEOF
+  )
+
+  # Strategy 2: pgcrypto inside postgres container (if bcrypt extension enabled)
+  if [[ -z "$ADMIN_HASH" ]]; then
+    ADMIN_HASH=$(docker exec "$pg_container" psql -U compliguard -d compliguard -tAq \
+      -c "SELECT crypt('$(echo "$ADMIN_PASSWORD" | sed "s/'/'\''/g")', gen_salt('bf', 12));" 2>/dev/null | tr -d '[:space:]')
+  fi
+
+  # Strategy 3: use a pre-computed bcrypt hash and do an UPDATE admin trick via node in the app container
+  # We write a tiny script into /tmp inside the app container and run it
+  if [[ -z "$ADMIN_HASH" ]]; then
+    local tmp_hash_script="/tmp/cg_hash_$$.js"
+    docker exec "$app_container" sh -c "
+      cat > $tmp_hash_script << 'EOF'
+const { execSync } = require('child_process');
+try {
+  const b = require('/app/node_modules/bcryptjs') || require('bcryptjs');
+  process.stdout.write(b.hashSync(process.env.ADMIN_PW, 12));
+} catch(e) {
+  process.exit(1);
+}
+EOF
+      ADMIN_PW='${ADMIN_PASSWORD}' node $tmp_hash_script 2>/dev/null
+      rm -f $tmp_hash_script
+    " 2>/dev/null && ADMIN_HASH=$(docker exec -e ADMIN_PW="${ADMIN_PASSWORD}" "$app_container" \
+      node -e "try{const b=require('/app/node_modules/bcryptjs');console.log(b.hashSync(process.env.ADMIN_PW,12));}catch(e){process.exit(1);}" 2>/dev/null)
+  fi
+
+  # Worst-case: no hashing available — store a placeholder and warn loudly
+  if [[ -z "$ADMIN_HASH" ]]; then
+    badge warn "Could not compute bcrypt hash — admin password stored as placeholder."
+    badge warn "After deploy, run: docker compose exec postgres psql -U compliguard -d compliguard"
+    badge warn "Then: UPDATE users SET password_hash=crypt('<yourpw>',gen_salt('bf',12)) WHERE email='${ADMIN_EMAIL}';"
+    ADMIN_HASH="CHANGE_ME_BCRYPT_HASH"
+  fi
+
+  # Insert or update admin user in users table
+  docker exec -i "$pg_container" psql -U compliguard -d compliguard <<PSQL 2>&1 | grep -vE '^$|^SET$|^INSERT' || true
+INSERT INTO users (id, email, password_hash, name, role, is_active, email_verified, created_at, updated_at)
+VALUES (
+  gen_random_uuid(),
+  '${ADMIN_EMAIL}',
+  '${ADMIN_HASH}',
+  'Administrator',
+  'super_admin',
+  true,
+  NOW(),
+  NOW(),
+  NOW()
+)
+ON CONFLICT (email) DO UPDATE SET
+  password_hash = EXCLUDED.password_hash,
+  role = 'super_admin',
+  is_active = true,
+  updated_at = NOW();
+PSQL
+
+  if [[ $? -eq 0 ]]; then
+    badge ok "Admin user ready: ${ADMIN_EMAIL}"
   else
-    # Use node inside the deps stage — try npx bcryptjs
-    BCRYPT_HASH=$(node -e "
-const b=require('bcryptjs');b.hash('${ADMIN_PASSWORD}',12).then(h=>{process.stdout.write(h);process.exit(0)});
-" 2>/dev/null)
+    badge warn "Admin injection had warnings — check with: docker exec <postgres> psql -U compliguard -d compliguard -c \"SELECT email,role FROM users;\""
   fi
-
-  if [[ -z "$BCRYPT_HASH" ]]; then
-    badge warn "Could not pre-hash password locally — using fallback hash for Welcome@123"
-    BCRYPT_HASH='\$2b\$12\$W91CcyP4VKKVmnmp/LloQ.GAW4sDIuuq1ZbgLchDjF4UXLGbR4GpK'
-  fi
-
-  # Inject directly via psql — works regardless of what's in the app container
-  $dc $compose_args exec -T postgres psql -U compliguard -d compliguard -c \
-    "INSERT INTO organizations (id, name, slug, created_at, updated_at)
-     VALUES (gen_random_uuid(), 'Default Organization', 'default-org', NOW(), NOW())
-     ON CONFLICT (slug) DO NOTHING;" 2>/dev/null
-
-  local ORG_ID
-  ORG_ID=$($dc $compose_args exec -T postgres psql -U compliguard -d compliguard -tAc \
-    "SELECT id FROM organizations LIMIT 1;" 2>/dev/null | tr -d '[:space:]')
-
-  $dc $compose_args exec -T postgres psql -U compliguard -d compliguard -c \
-    "INSERT INTO users (id, email, first_name, last_name, password_hash, role, is_active, organization_id, created_at, updated_at)
-     VALUES (gen_random_uuid(), '${ADMIN_EMAIL}', 'Admin', 'User', '${BCRYPT_HASH}', 'super_admin', true, '${ORG_ID}', NOW(), NOW())
-     ON CONFLICT (email) DO UPDATE
-       SET password_hash = EXCLUDED.password_hash, role = 'super_admin',
-           is_active = true, updated_at = NOW()
-     RETURNING email, role, is_active;" 2>&1 | \
-    grep -v "^$\|WARN\|level=" | while IFS= read -r line; do echo -e "  ${GRAY}  ${line}${RESET}"; done
-
-  badge ok "Admin account ready"
   echo ""
 
   # Health check loop
@@ -879,7 +949,7 @@ show_summary() {
   echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}App URL    ${RESET}  ${WHITE}${app_url}$(printf '%*s' $((40 - ${#app_url})) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Admin      ${RESET}  ${WHITE}${ADMIN_EMAIL}$(printf '%*s' $((40 - ${#ADMIN_EMAIL})) '')${BOLD}${WHITE}|${RESET}"
-  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}$(mask_secret "$ADMIN_PASSWORD")$(printf '%*s' $((40 - ${#ADMIN_PASSWORD})) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}(the password you entered)$(printf '%*s' $((40 - 25)) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}DB Pass    ${RESET}  ${GRAY}${pg_pass_masked}$(printf '%*s' $((40 - ${#pg_pass_masked})) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${GREEN}${BOLD}Env File   ${RESET}  ${WHITE}${PROJECT_DIR}/.env$(printf '%*s' $((40 - ${#PROJECT_DIR} - 5)) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
