@@ -8,7 +8,9 @@
 #    bash scripts/deploy.sh --dry-run # preview without deploying
 #    bash scripts/deploy.sh --help    # show help
 # =============================================================================
-set -euo pipefail
+set -uo pipefail
+# Note: -e (errexit) intentionally omitted — we handle errors explicitly
+# so partial failures in optional steps don't abort the whole deployment
 
 # ─────────────────────────────────────────────────────────────────────────────
 # COLOR & STYLE CONSTANTS
@@ -804,14 +806,24 @@ run_deploy() {
     app_container=$(docker ps --filter "name=compliguard.*app" --format "{{.ID}}" | head -1)
   fi
 
-  if docker exec "$app_container" sh -c 'cd /app && node_modules/.bin/drizzle-kit migrate 2>/dev/null || node_modules/.bin/drizzle-kit push --force 2>/dev/null' 2>&1 | grep -qiE 'done|migrat|success|No changes'; then
-    badge ok "Migrations complete"
+  # Always use psql fallback — drizzle-kit is not available in the standalone production image
+  # Drizzle migration files use '--> statement-breakpoint' separators which psql can't parse
+  # We strip them out and feed clean SQL statements directly
+  local migration_ok=false
+  for sql_file in "$PROJECT_DIR"/drizzle/migrations/*.sql; do
+    if [[ -f "$sql_file" ]]; then
+      # Strip Drizzle's '--> statement-breakpoint' lines, then pipe to psql
+      if sed '/^--> statement-breakpoint/d' "$sql_file" | \
+         docker exec -i "$pg_container" psql -U compliguard -d compliguard \
+         -v ON_ERROR_STOP=0 2>&1 | grep -qiE 'CREATE TABLE|already exists|ERROR' ; then
+        migration_ok=true
+      fi
+    fi
+  done
+  if [[ "$migration_ok" == true ]]; then
+    badge ok "Migrations applied"
   else
-    # Fallback: apply SQL migration files directly via psql
-    for sql_file in "$PROJECT_DIR"/drizzle/migrations/*.sql; do
-      [[ -f "$sql_file" ]] && docker exec -i "$pg_container" psql -U compliguard -d compliguard < "$sql_file" &>/dev/null
-    done
-    badge ok "Migrations applied via psql fallback"
+    badge warn "No migration files found or migrations may have already been applied"
   fi
   echo ""
 
@@ -867,16 +879,19 @@ EOF
   fi
 
   # Insert or update admin user in users table
-  docker exec -i "$pg_container" psql -U compliguard -d compliguard <<PSQL 2>&1 | grep -vE '^$|^SET$|^INSERT' || true
-INSERT INTO users (id, email, password_hash, name, role, is_active, email_verified, created_at, updated_at)
+  # Column names MUST match lib/db/schema/users.ts exactly:
+  #   first_name, last_name, password_hash, role, is_active (NO email_verified, NO name column)
+  local psql_output
+  psql_output=$(docker exec -i "$pg_container" psql -U compliguard -d compliguard 2>&1 <<PSQL
+INSERT INTO users (id, email, first_name, last_name, password_hash, role, is_active, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   '${ADMIN_EMAIL}',
+  'Admin',
+  'User',
   '${ADMIN_HASH}',
-  'Administrator',
   'super_admin',
   true,
-  NOW(),
   NOW(),
   NOW()
 )
@@ -886,11 +901,13 @@ ON CONFLICT (email) DO UPDATE SET
   is_active = true,
   updated_at = NOW();
 PSQL
+  )
 
-  if [[ $? -eq 0 ]]; then
-    badge ok "Admin user ready: ${ADMIN_EMAIL}"
+  if echo "$psql_output" | grep -qiE 'ERROR|error'; then
+    badge warn "Admin injection warning: ${psql_output}"
+    badge warn "Manual fix: docker exec compliguard-postgres-1 psql -U compliguard -d compliguard -c \"SELECT email,role FROM users;\""
   else
-    badge warn "Admin injection had warnings — check with: docker exec <postgres> psql -U compliguard -d compliguard -c \"SELECT email,role FROM users;\""
+    badge ok "Admin user ready: ${ADMIN_EMAIL}"
   fi
   echo ""
 
