@@ -50,6 +50,8 @@ NEXTAUTH_SECRET=""
 JWT_SECRET=""
 NEXTAUTH_URL=""
 COMPOSE_SERVICES=""
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -444,6 +446,28 @@ gather_config() {
     esac
   done
 
+  # Admin account
+  echo ""
+  echo -e "  ${WHITE}${BOLD}Admin Account${RESET}  ${GRAY}(first login credentials)${RESET}"
+  echo ""
+  ask ADMIN_EMAIL "Admin email" "admin@compliguard.local"
+  while true; do
+    ask_secret ADMIN_PASSWORD "Admin password (min 8 chars)"
+    if [[ ${#ADMIN_PASSWORD} -lt 8 ]]; then
+      echo -e "  ${RED}  Password must be at least 8 characters.${RESET}"
+    else
+      local confirm_pass
+      ask_secret confirm_pass "Confirm password"
+      if [[ "$ADMIN_PASSWORD" != "$confirm_pass" ]]; then
+        echo -e "  ${RED}  Passwords do not match. Try again.${RESET}"
+      else
+        break
+      fi
+    fi
+  done
+  badge ok "Admin: ${ADMIN_EMAIL}"
+  badge ok "Password: $(mask_secret "$ADMIN_PASSWORD")"
+
   echo ""
   badge ok "Domain: ${DOMAIN}"
   badge ok "App URL: ${NEXTAUTH_URL}"
@@ -552,7 +576,6 @@ write_env_file() {
 NODE_ENV=production
 PORT=${PORT}
 NEXTAUTH_URL=${NEXTAUTH_URL}
-NEXTAUTH_URL_INTERNAL=http://localhost:3030
 NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
 JWT_SECRET=${JWT_SECRET}
 
@@ -600,6 +623,10 @@ EOF
   esac
 
   cat >> "$env_file" << EOF
+
+# ── Admin Account ───────────────────────────────────────────
+ADMIN_EMAIL=${ADMIN_EMAIL}
+ADMIN_PASSWORD=${ADMIN_PASSWORD}
 
 # ── Email ────────────────────────────────────────────────────
 # Set EMAIL_PROVIDER=postmark and add POSTMARK_TOKEN for real emails
@@ -739,6 +766,24 @@ run_deploy() {
   badge ok "Containers started"
   echo ""
 
+  # --- DB migrations + admin init ---
+  echo -e "  ${CYAN}Applying database schema (this takes ~10s)...${RESET}"
+  sleep 5  # give postgres a moment to be fully ready
+  $dc $compose_args exec -T app npx drizzle-kit push --force 2>&1 | \
+    grep -E "changes|table|error|Error|applied" | \
+    while IFS= read -r line; do echo -e "  ${GRAY}  ${line}${RESET}"; done
+  badge ok "Database schema applied"
+
+  echo ""
+  echo -e "  ${CYAN}Creating admin account (${ADMIN_EMAIL})...${RESET}"
+  $dc $compose_args exec -T \
+    -e ADMIN_EMAIL="${ADMIN_EMAIL}" \
+    -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
+    app node seed/create-admin.js 2>&1 | \
+    grep -v '^$' | while IFS= read -r line; do echo -e "  ${GRAY}  ${line}${RESET}"; done
+  badge ok "Admin account ready"
+  echo ""
+
   # Health check loop
   echo -e "  ${CYAN}Waiting for CompliGuard to be ready...${RESET}"
   echo ""
@@ -793,8 +838,8 @@ show_summary() {
   echo -e "${BOLD}${WHITE}  +--------------------------------------------------------------+${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}App URL    ${RESET}  ${WHITE}${app_url}$(printf '%*s' $((40 - ${#app_url})) '')${BOLD}${WHITE}|${RESET}"
-  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Admin      ${RESET}  ${WHITE}admin@compliguard.local$(printf '%*s' $((40 - 23)) '')${BOLD}${WHITE}|${RESET}"
-  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}Welcome@123$(printf '%*s' $((40 - 11)) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Admin      ${RESET}  ${WHITE}${ADMIN_EMAIL}$(printf '%*s' $((40 - ${#ADMIN_EMAIL})) '')${BOLD}${WHITE}|${RESET}"
+  echo -e "${BOLD}${WHITE}  |${RESET}  ${VIOLET}${BOLD}Password   ${RESET}  ${WHITE}$(mask_secret "$ADMIN_PASSWORD")$(printf '%*s' $((40 - ${#ADMIN_PASSWORD})) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${CYAN}${BOLD}DB Pass    ${RESET}  ${GRAY}${pg_pass_masked}$(printf '%*s' $((40 - ${#pg_pass_masked})) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}  ${GREEN}${BOLD}Env File   ${RESET}  ${WHITE}${PROJECT_DIR}/.env$(printf '%*s' $((40 - ${#PROJECT_DIR} - 5)) '')${BOLD}${WHITE}|${RESET}"
   echo -e "${BOLD}${WHITE}  |${RESET}                                                              ${BOLD}${WHITE}|${RESET}"
