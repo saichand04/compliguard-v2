@@ -37,8 +37,8 @@
 
   /* Text hierarchy */
   --text-primary:    #F1F5F9;
-  --text-secondary:  rgba(241, 245, 249, 0.65);
-  --text-muted:      rgba(241, 245, 249, 0.38);
+  --text-secondary:  rgba(241, 245, 249, 0.85);
+  --text-muted:      rgba(241, 245, 249, 0.60);
   --text-accent:     #8B5CF6;
 
   /* Ambient glow positions */

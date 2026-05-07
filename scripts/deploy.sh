@@ -806,24 +806,31 @@ run_deploy() {
     app_container=$(docker ps --filter "name=compliguard.*app" --format "{{.ID}}" | head -1)
   fi
 
-  # Always use psql fallback — drizzle-kit is not available in the standalone production image
-  # Drizzle migration files use '--> statement-breakpoint' separators which psql can't parse
-  # We strip them out and feed clean SQL statements directly
-  local migration_ok=false
+  # Apply migrations via psql — drizzle-kit is NOT available in the standalone production image
+  # IMPORTANT: Drizzle SQL files embed '--> statement-breakpoint' as an INLINE SUFFIX on the same
+  # line as each statement (e.g. 'CREATE TYPE ...;--> statement-breakpoint'). We must strip this
+  # suffix globally with 's/--> statement-breakpoint//g' — NOT a line-deletion pattern.
+  local migration_applied=false
   for sql_file in "$PROJECT_DIR"/drizzle/migrations/*.sql; do
     if [[ -f "$sql_file" ]]; then
-      # Strip Drizzle's '--> statement-breakpoint' lines, then pipe to psql
-      if sed '/^--> statement-breakpoint/d' "$sql_file" | \
-         docker exec -i "$pg_container" psql -U compliguard -d compliguard \
-         -v ON_ERROR_STOP=0 2>&1 | grep -qiE 'CREATE TABLE|already exists|ERROR' ; then
-        migration_ok=true
+      badge info "Applying migration: $(basename "$sql_file")"
+      local mig_output
+      mig_output=$(sed 's/--> statement-breakpoint//g' "$sql_file" | \
+        docker exec -i "$pg_container" psql -U compliguard -d compliguard \
+        --set ON_ERROR_STOP=0 2>&1)
+      local mig_errors
+      mig_errors=$(echo "$mig_output" | grep -iE '^ERROR' | grep -v 'already exists' | head -5 || true)
+      if [[ -n "$mig_errors" ]]; then
+        badge warn "Migration warnings (non-fatal): $mig_errors"
+      else
+        badge ok "Migration applied: $(basename "$sql_file")"
+        migration_applied=true
       fi
     fi
   done
-  if [[ "$migration_ok" == true ]]; then
-    badge ok "Migrations applied"
-  else
-    badge warn "No migration files found or migrations may have already been applied"
+  if [[ "$migration_applied" == false ]]; then
+    badge warn "No .sql migration files found in $PROJECT_DIR/drizzle/migrations/"
+    badge warn "Tables may already exist, or migration files may be missing from the repo."
   fi
   echo ""
 
