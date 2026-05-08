@@ -915,6 +915,15 @@ PSQL
   else
     badge ok "Admin user ready: ${ADMIN_EMAIL}"
   fi
+
+  # ── Seed system_settings (mark setup as complete) ─────────────────────────────
+  # Without this row, the app redirects every page to /setup/welcome on first run
+  docker exec -i "$pg_container" psql -U compliguard -d compliguard > /dev/null 2>&1 <<PSQL
+INSERT INTO system_settings (id, setup_completed, setup_step, platform_name, deployment_type, updated_at)
+VALUES (gen_random_uuid(), true, 9, 'CompliGuard', 'docker', NOW())
+ON CONFLICT DO NOTHING;
+PSQL
+  badge ok "Setup wizard marked complete"
   echo ""
 
   # Health check loop

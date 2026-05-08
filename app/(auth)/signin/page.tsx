@@ -36,6 +36,9 @@ function SignInForm() {
       })
       const json = await res.json()
       if (!res.ok) { setError(json.error || 'Sign in failed'); return }
+      // router.refresh() forces Next.js to re-evaluate all server components
+      // so the session cookie is picked up before navigating to the dashboard
+      router.refresh()
       router.push(callbackUrl)
     } catch { setError('An unexpected error occurred. Please try again.') }
     finally { setLoading(false) }
