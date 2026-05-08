@@ -77,9 +77,14 @@ export async function setSessionCookie(payload: Omit<SessionPayload, 'iat' | 'ex
   const token = await signToken(payload)
   const cookieStore = await cookies()
 
+  // Use NEXTAUTH_URL to determine if we're running over HTTPS.
+  // Do NOT use NODE_ENV === 'production' for the secure flag — Docker deployments
+  // on a local network are production mode but served over plain HTTP.
+  const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://')
+
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 7, // 7 days in seconds
@@ -102,9 +107,10 @@ export async function clearSessionCookie(): Promise<void> {
  */
 export async function setSetupCookie(): Promise<void> {
   const cookieStore = await cookies()
+  const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://')
   cookieStore.set(SETUP_COOKIE_NAME, 'done', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps,
     sameSite: 'lax',
     path: '/',
     maxAge: 60 * 60 * 24 * 365, // 1 year

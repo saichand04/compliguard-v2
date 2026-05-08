@@ -51,7 +51,7 @@ MINIO_PASSWORD=""
 NEXTAUTH_SECRET=""
 JWT_SECRET=""
 NEXTAUTH_URL=""
-NEXTAUTH_URL_INTERNAL="http://localhost:3030"  # always internal container port
+NEXTAUTH_URL_INTERNAL=""  # set equal to NEXTAUTH_URL during gather_config
 ADMIN_EMAIL="admin@compliguard.local"
 ADMIN_PASSWORD=""
 COMPOSE_SERVICES=""
@@ -399,14 +399,12 @@ gather_config() {
 
     ask PORT "External app port (what you'll access in browser)" "${suggested_port}"
 
-    # NEXTAUTH_URL = what the browser uses (external host:port)
-    # NEXTAUTH_URL_INTERNAL = always internal container port (3030), never changes
-    if [[ "$DOMAIN" == "localhost" || "$DOMAIN" == "127.0.0.1" ]]; then
-      NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
-    else
-      NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
-    fi
-    NEXTAUTH_URL_INTERNAL="http://localhost:3030"
+    # Both NEXTAUTH_URL and NEXTAUTH_URL_INTERNAL must be identical.
+    # NextAuth uses NEXTAUTH_URL_INTERNAL for server-side callback resolution.
+    # Since we have no Nginx layer, the container reaches itself on the same
+    # host:port the browser uses — they must match exactly.
+    NEXTAUTH_URL="http://${DOMAIN}:${PORT}"
+    NEXTAUTH_URL_INTERNAL="http://${DOMAIN}:${PORT}"
   fi
 
   if [[ "$DEPLOY_MODE" == "fullstack" ]]; then
@@ -439,6 +437,7 @@ gather_config() {
       esac
     done
     NEXTAUTH_URL="https://${DOMAIN}"
+    NEXTAUTH_URL_INTERNAL="https://${DOMAIN}"
   fi
 
   echo ""
@@ -485,8 +484,8 @@ gather_config() {
   echo ""
 
   badge ok "Domain: ${DOMAIN}"
-  badge ok "External URL: ${NEXTAUTH_URL}"
-  badge info "Internal URL: ${NEXTAUTH_URL_INTERNAL}  (container-to-container, always :3030)"
+  badge ok "App URL: ${NEXTAUTH_URL}"
+  badge ok "NEXTAUTH_URL_INTERNAL: ${NEXTAUTH_URL_INTERNAL}  (must equal App URL)"
   [[ "$AI_PROVIDER" != "skip" ]] && badge ok "AI Provider: ${AI_PROVIDER}"
   [[ "$AI_PROVIDER" == "skip" ]] && badge warn "AI Provider: skipped (configure post-deploy)"
   echo ""
