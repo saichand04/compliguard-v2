@@ -5,6 +5,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      # Pin the production stage. Without this, Docker builds the last stage in
+      # the Dockerfile, which is `development` (npm run dev / Turbopack) and
+      # silently turns prod deploys into dev — broken hydration, source mounts,
+      # the works. docker-compose.dev.yml overrides this to `development`.
+      target: runner
     ports:
       - "${PORT:-3030}:3030"
     environment:
