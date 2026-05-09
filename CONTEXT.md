@@ -1,7 +1,7 @@
 # CompliGuard v2 — Project Context
 
-**Last Updated**: 2026-05-03 — Phase 2 launched  
-**Status**: Phase 2 — Operational Backbone (in progress)  
+**Last Updated**: 2026-05-09 — Docker login fixed, all phases 0–7 complete  
+**Status**: PRODUCTION READY — Docker deployment working on homelab  
 **License**: Apache 2.0  
 **GitHub**: https://github.com/saichand04/compliguard-v2 (private)
 
@@ -966,3 +966,87 @@ lib/email/templates/                           → Email HTML templates (2.13)
   - Root cause: old .next/dev/server/pages/_document.js referenced chunk from prior build
   - Fix: `kill -9 $(lsof -ti:3030); rm -rf .next .turbo; npm run dev`
   - Must always `rm -rf .next` before restart when new files are pushed
+
+---
+
+## DOCKER DEPLOYMENT — POST-MORTEM (2026-05-09)
+
+### What Was Actually Wrong (4 Layered Bugs)
+
+**Bug 1 — `docker-compose.override.yml` auto-loaded on every prod deploy**
+Docker Compose merges any file named `docker-compose.override.yml` in the project directory by default with no flags required. This file set `target: development`, `command: npm run dev`, and mounted the source tree — so every `docker compose up` in prod was silently running Turbopack dev mode instead of the production build.
+- Fix: renamed to `docker-compose.dev.yml` (not auto-loaded). Use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` for local dev.
+
+**Bug 2 — `docker-compose.yml` had no `target:` → Docker built last Dockerfile stage**
+Without an explicit `target:`, Docker builds the last stage in the Dockerfile. The `development` stage was last, so even after removing the override file, prod builds still ran `npm run dev`.
+- Fix: added `target: runner` to `docker-compose.yml`. Reordered Dockerfile so `runner` is the last stage (defense-in-depth).
+
+**Bug 3 — Production `next build` was failing silently**
+Two compile errors prevented a successful prod build:
+1. `nodemailer` was used in the email service but not in `package.json` — `npm ci` never installed it
+2. `app/api/storage/local/[...key]/route.ts` used the old Next.js 14 params type signature. Next.js 16 requires `params: Promise<{...}>` and `await context.params`
+Build failures left the old dev image running — no error was surfaced to the deploy script.
+- Fix: added `nodemailer` to `package.json`; updated storage route to async params pattern.
+
+**Bug 4 — `ssr: false` in a Server Component (Next.js 16 forbids it)**
+`app/(dashboard)/dashboard/page.tsx` (a Server Component) used `next/dynamic({ ssr: false })`. Next.js 16 throws a build/runtime error for this.
+- Fix: replaced `next/dynamic` with plain ES imports. `XDRTicker` and `TeamsStatusWidget` are `'use client'` components that guard browser APIs inside `useEffect`, so SSR is safe.
+
+### Why Login Looked Like It Was Failing (The Chain)
+
+Because of bugs 1+2, every Docker container was running `npm run dev` (Turbopack). In dev mode, Turbopack lazy-compiles client chunks — the `/signin` form rendered its HTML before its JavaScript was ready. React never hydrated the form. The browser fell back to native HTML form submission, which sent a **GET request** (`/signin?email=...&password=Welcome@123`) instead of the fetch POST. The GET found no handler, returned the page HTML, and the user appeared to still be on the login page.
+
+**Critical security note**: The admin password `Welcome@123` was transmitted in plaintext in GET request URLs and logged in Docker request logs and browser history. Rotate any password used during this debugging period.
+
+### Verified Working State (homelab 192.168.68.30:3040)
+- Container runs `node server.js` as `nextjs` user (not root, not `npm run dev`) ✓
+- `POST /api/auth/login` → 200 + `cg-session` cookie set ✓
+- `GET /dashboard` with cookie → 200 ✓
+- HTML contains hashed production chunk filenames, no next-devtools ✓
+
+### Key Commits
+| Commit | Fix |
+|--------|-----|
+| `b947a99` | Remove `ssr:false` from dashboard server component |
+| `8c602f6` | Rename `docker-compose.override.yml` → `docker-compose.dev.yml` |
+| `0f42656` | Pin `target: runner` in docker-compose.yml; reorder Dockerfile |
+| `2ca6956` | Install nodemailer; fix Next.js 16 async params in storage route |
+
+### Deploy Commands (Homelab)
+```bash
+# Full wipe + redeploy
+cd /opt/compliguard && docker compose down -v --remove-orphans
+docker rmi compliguard-app compliguard-v2-app 2>/dev/null || true
+rm -rf /opt/compliguard
+git clone https://saichand04:<PAT>@github.com/saichand04/compliguard-v2.git /opt/compliguard
+cd /opt/compliguard && bash scripts/deploy.sh
+
+# Dev mode (local Mac)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+```
+
+### Architecture Notes (Confirmed)
+- App internal port: always **3030** (inside container)
+- External port: **3040** on homelab (3030 taken by `homepage` container)
+- `NEXTAUTH_URL` and `NEXTAUTH_URL_INTERNAL` must both equal `http://<host>:<external-port>`
+- Session cookie `secure: false` for HTTP deployments — derived from `NEXTAUTH_URL.startsWith('https://')`
+- Auth is **custom JWT** via `/api/auth/login` — NOT NextAuth credentials provider
+- `super_admin` users have `organization_id = NULL` — intentional
+- `system_settings` table must have a row with `setup_completed=true, setup_step=9` or the setup wizard blocks all pages
+
+---
+
+## PHASE COMPLETION STATUS
+
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 0 | ✅ Complete | Foundation — Next.js 15, Drizzle, Docker, auth |
+| 1 | ✅ Complete | Core Engine — NIST 800-53, 243 controls |
+| 2 | ✅ Complete | Operational Backbone (2.1–2.15) |
+| 3 | ✅ Complete | Integrations |
+| 4 | ✅ Complete | Microsoft Deep (Sentinel, Defender, Intune) |
+| 5 | ✅ Complete | Platform Completeness |
+| 6 | ✅ Complete | OpenClaw MCP Server |
+| 7 | ✅ Complete | Microsoft Teams Bot |
+| **Next** | 🔜 Pending | Feature development phase TBD |
+
