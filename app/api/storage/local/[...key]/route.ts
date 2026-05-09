@@ -41,12 +41,12 @@ const BASE_PATH = process.env.STORAGE_LOCAL_PATH || '/tmp/compliguard-uploads'
  */
 export async function GET(
   req: NextRequest,
-  context: { params: { key: string[] } }
+  context: { params: Promise<{ key: string[] }> }
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
 
-  const { key: keyParts } = context.params
+  const { key: keyParts } = await context.params
   if (!keyParts || keyParts.length === 0) {
     return ApiErrors.badRequest('No key provided')
   }
