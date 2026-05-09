@@ -702,7 +702,12 @@ run_deploy() {
   local dc="docker compose"
   command -v "docker-compose" &>/dev/null && ! docker compose version &>/dev/null 2>&1 && dc="docker-compose"
 
-  # Build service list and compose args
+  # Build service list and compose args.
+  # IMPORTANT: always pass -f explicitly. Without -f, Docker Compose auto-loads
+  # docker-compose.override.yml from the project dir if it exists, which in past
+  # deployments silently turned a "production" deploy into a dev (Turbopack)
+  # container — breaking client-side hydration. Pinning the file list here keeps
+  # prod deploys deterministic.
   local compose_args="-f $PROJECT_DIR/docker-compose.yml"
   local services=""
 
@@ -719,10 +724,18 @@ run_deploy() {
       fi
       ;;
     dev)
-      compose_args="-f $PROJECT_DIR/docker-compose.yml -f $PROJECT_DIR/docker-compose.override.yml"
+      compose_args="-f $PROJECT_DIR/docker-compose.yml -f $PROJECT_DIR/docker-compose.dev.yml"
       services="app postgres redis"
       ;;
   esac
+
+  # Defensive cleanup: a stray docker-compose.override.yml in the deploy dir
+  # would still be picked up by any plain `docker compose ...` the operator
+  # later runs. Warn so the operator can remove it if it shouldn't be there.
+  if [[ -f "$PROJECT_DIR/docker-compose.override.yml" ]]; then
+    badge warn "docker-compose.override.yml exists — Docker Compose auto-loads it on \`docker compose up\` (without -f)."
+    badge warn "If you intend a production deploy, remove it: rm $PROJECT_DIR/docker-compose.override.yml"
+  fi
 
   echo -e "  ${WHITE}${BOLD}Compose command:${RESET}"
   echo -e "  ${GRAY}${dc} ${compose_args} up -d --build ${services}${RESET}"

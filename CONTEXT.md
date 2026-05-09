@@ -684,7 +684,7 @@ lib/email/templates/                           → Email HTML templates (2.13)
 
 ### 5.3 Self-Hosted Edition
 - `docker-compose.yml` — full stack: app + postgres + minio + redis
-- `docker-compose.override.yml` — dev overrides
+- `docker-compose.dev.yml` — dev overrides (explicit `-f` required; not auto-loaded)
 - `systemd/compliguard.service` — systemd unit file
 - `scripts/install.sh` — one-command install for Ubuntu/Debian
 - `scripts/backup.sh` — DB + storage backup script
