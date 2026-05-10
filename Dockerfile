@@ -4,7 +4,7 @@ RUN apk add --no-cache libc6-compat
 
 FROM base AS deps
 COPY package.json package-lock.json* ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --no-audit 2>&1 | grep -v 'npm warn deprecated' || true
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules

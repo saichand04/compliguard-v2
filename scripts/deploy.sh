@@ -850,9 +850,20 @@ run_deploy() {
   echo -e "  ${CYAN}Creating admin account (${ADMIN_EMAIL})...${RESET}"
 
   # Generate bcrypt hash of admin password
-  # Strategy 1: python3 with bcrypt module (safest, handles special chars via env var)
+  # Strategy 1 (PRIMARY): Use bcryptjs from inside the app container — ALWAYS available
+  # because bcryptjs is a runtime dependency (not devDep) and is in the production image.
+  # Password passed via environment variable to avoid shell quoting / injection issues.
   local ADMIN_HASH
-  ADMIN_HASH=$(ADMIN_PW="${ADMIN_PASSWORD}" python3 - <<'PYEOF' 2>/dev/null
+  badge info "Generating bcrypt hash via app container..."
+  ADMIN_HASH=$(docker exec -e ADMIN_PW="${ADMIN_PASSWORD}" "$app_container" \
+    node -e "
+      const b = require('/app/node_modules/bcryptjs');
+      process.stdout.write(b.hashSync(process.env.ADMIN_PW, 12));
+    " 2>/dev/null)
+
+  # Strategy 2: python3-bcrypt on the host (available on some distros)
+  if [[ -z "$ADMIN_HASH" ]]; then
+    ADMIN_HASH=$(ADMIN_PW="${ADMIN_PASSWORD}" python3 - <<'PYEOF' 2>/dev/null
 import os, sys
 pw = os.environ.get('ADMIN_PW', '')
 try:
@@ -861,40 +872,22 @@ try:
 except ImportError:
     sys.exit(1)
 PYEOF
-  )
+    )
+  fi
 
-  # Strategy 2: pgcrypto inside postgres container (if bcrypt extension enabled)
+  # Strategy 3: pgcrypto inside postgres container (requires pgcrypto extension)
   if [[ -z "$ADMIN_HASH" ]]; then
     ADMIN_HASH=$(docker exec "$pg_container" psql -U compliguard -d compliguard -tAq \
-      -c "SELECT crypt('$(echo "$ADMIN_PASSWORD" | sed "s/'/'\''/g")', gen_salt('bf', 12));" 2>/dev/null | tr -d '[:space:]')
+      -c "SELECT crypt('$(echo "${ADMIN_PASSWORD}" | sed "s/'/''/g")', gen_salt('bf', 12));" 2>/dev/null | tr -d '[:space:]')
   fi
 
-  # Strategy 3: use a pre-computed bcrypt hash and do an UPDATE admin trick via node in the app container
-  # We write a tiny script into /tmp inside the app container and run it
-  if [[ -z "$ADMIN_HASH" ]]; then
-    local tmp_hash_script="/tmp/cg_hash_$$.js"
-    docker exec "$app_container" sh -c "
-      cat > $tmp_hash_script << 'EOF'
-const { execSync } = require('child_process');
-try {
-  const b = require('/app/node_modules/bcryptjs') || require('bcryptjs');
-  process.stdout.write(b.hashSync(process.env.ADMIN_PW, 12));
-} catch(e) {
-  process.exit(1);
-}
-EOF
-      ADMIN_PW='${ADMIN_PASSWORD}' node $tmp_hash_script 2>/dev/null
-      rm -f $tmp_hash_script
-    " 2>/dev/null && ADMIN_HASH=$(docker exec -e ADMIN_PW="${ADMIN_PASSWORD}" "$app_container" \
-      node -e "try{const b=require('/app/node_modules/bcryptjs');console.log(b.hashSync(process.env.ADMIN_PW,12));}catch(e){process.exit(1);}" 2>/dev/null)
-  fi
-
-  # Worst-case: no hashing available — store a placeholder and warn loudly
-  if [[ -z "$ADMIN_HASH" ]]; then
-    badge warn "Could not compute bcrypt hash — admin password stored as placeholder."
-    badge warn "After deploy, run: docker compose exec postgres psql -U compliguard -d compliguard"
-    badge warn "Then: UPDATE users SET password_hash=crypt('<yourpw>',gen_salt('bf',12)) WHERE email='${ADMIN_EMAIL}';"
-    ADMIN_HASH="CHANGE_ME_BCRYPT_HASH"
+  # Worst-case: no hashing method available
+  if [[ -z "$ADMIN_HASH" ]] || [[ "$ADMIN_HASH" == *"Error"* ]]; then
+    badge err "Could not compute bcrypt hash via any method."
+    badge warn "Fix after deploy — run this on the server:"
+    badge warn "  HASH=\$(docker exec compliguard-app-1 node -e \"const b=require('/app/node_modules/bcryptjs');console.log(b.hashSync('YOUR_PASSWORD',12))\")"
+    badge warn "  docker exec compliguard-postgres-1 psql -U compliguard -d compliguard -c \"UPDATE users SET password_hash='\$HASH' WHERE email='${ADMIN_EMAIL}';\""
+    ADMIN_HASH="PLACEHOLDER_MUST_BE_REPLACED"
   fi
 
   # Insert or update admin user in users table
