@@ -210,6 +210,39 @@ mask_secret() {
   fi
 }
 
+# is_weak_secret <value>
+# Returns 0 (true) if the value matches a known cargo-cult placeholder pattern.
+# Patterns are case-insensitive and substring-matched, so e.g.
+# "MyChangeMe123" and "compliguard-prod" are both rejected.
+is_weak_secret() {
+  local value="$1"
+  echo "$value" | grep -qiE 'changeme|your-32-char|placeholder|compliguard123|^compliguard$'
+}
+
+# require_strong_secret <varname> <prompt> <min_length>
+# Re-prompts via ask_secret until the user supplies a value that:
+#   1. is at least <min_length> chars
+#   2. does not match is_weak_secret patterns
+require_strong_secret() {
+  local var="$1"
+  local prompt="$2"
+  local min_len="${3:-32}"
+  local value=""
+  while true; do
+    ask_secret value "$prompt"
+    if (( ${#value} < min_len )); then
+      badge err "Value too short (got ${#value}, need ≥ ${min_len}). Try again."
+      continue
+    fi
+    if is_weak_secret "$value"; then
+      badge err "Value matches a known weak/placeholder pattern. Try again."
+      continue
+    fi
+    break
+  done
+  printf -v "$var" '%s' "$value"
+}
+
 spinner() {
   local pid="$1"
   local msg="$2"
@@ -510,7 +543,9 @@ generate_secrets() {
     NEXTAUTH_SECRET="$generated_auth"
     badge gen "NEXTAUTH_SECRET generated"
   else
-    ask_secret NEXTAUTH_SECRET "Enter NEXTAUTH_SECRET (min 32 chars)"
+    # User-supplied secrets must be ≥ 32 chars and free of cargo-cult patterns
+    # (changeme, your-32-char, placeholder, compliguard123, etc.).
+    require_strong_secret NEXTAUTH_SECRET "Enter NEXTAUTH_SECRET (min 32 chars, no placeholder text)" 32
     badge ok "NEXTAUTH_SECRET set"
   fi
   echo ""
@@ -524,7 +559,7 @@ generate_secrets() {
     JWT_SECRET="$generated_jwt"
     badge gen "JWT_SECRET generated"
   else
-    ask_secret JWT_SECRET "Enter JWT_SECRET (min 32 chars)"
+    require_strong_secret JWT_SECRET "Enter JWT_SECRET (min 32 chars, no placeholder text)" 32
     badge ok "JWT_SECRET set"
   fi
   echo ""
@@ -538,7 +573,8 @@ generate_secrets() {
     POSTGRES_PASSWORD="$generated_pg"
     badge gen "POSTGRES_PASSWORD generated"
   else
-    ask_secret POSTGRES_PASSWORD "Enter POSTGRES_PASSWORD"
+    # Postgres passwords don't need 32 chars but must not be cargo-cult.
+    require_strong_secret POSTGRES_PASSWORD "Enter POSTGRES_PASSWORD (min 16 chars, no placeholder text)" 16
     badge ok "POSTGRES_PASSWORD set"
   fi
   echo ""
@@ -553,7 +589,7 @@ generate_secrets() {
       MINIO_PASSWORD="$generated_minio"
       badge gen "MINIO_ROOT_PASSWORD generated"
     else
-      ask_secret MINIO_PASSWORD "Enter MINIO_ROOT_PASSWORD"
+      require_strong_secret MINIO_PASSWORD "Enter MINIO_ROOT_PASSWORD (min 16 chars, no placeholder text)" 16
       badge ok "MINIO_ROOT_PASSWORD set"
     fi
     echo ""
@@ -570,11 +606,34 @@ generate_secrets() {
     fi
   fi
 
-  write_env_file
+  # write_env_file performs final strong-secret validation; if it fails we
+  # must NOT continue to run_deploy with a half-written or weak .env.
+  if ! write_env_file; then
+    badge err "Failed to write .env — aborting deploy."
+    exit 1
+  fi
 }
 
 write_env_file() {
   local env_file="$PROJECT_DIR/.env"
+
+  # Final defensive gate before persisting. Even auto-generated values get
+  # checked here — protects against future refactors that swap gen_secret()
+  # for something weaker without revisiting this file.
+  if (( ${#NEXTAUTH_SECRET} < 32 )); then
+    badge err "NEXTAUTH_SECRET is shorter than 32 chars (${#NEXTAUTH_SECRET}). Aborting."
+    return 1
+  fi
+  if (( ${#JWT_SECRET} < 32 )); then
+    badge err "JWT_SECRET is shorter than 32 chars (${#JWT_SECRET}). Aborting."
+    return 1
+  fi
+  if is_weak_secret "$NEXTAUTH_SECRET" || is_weak_secret "$JWT_SECRET" \
+       || is_weak_secret "$POSTGRES_PASSWORD" \
+       || { [[ "$DEPLOY_MODE" == "fullstack" ]] && is_weak_secret "$MINIO_PASSWORD"; }; then
+    badge err "One of the secrets matches a known weak/placeholder pattern. Aborting."
+    return 1
+  fi
 
   # Determine storage provider
   local storage_provider="local"

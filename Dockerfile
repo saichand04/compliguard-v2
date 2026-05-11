@@ -11,8 +11,23 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL=postgresql://placeholder:placeholder@placeholder:5432/placeholder
-ENV NEXTAUTH_SECRET=build-time-placeholder-secret-32-chars
+# Build-time placeholder secrets. These are NOT secrets — they're sentinels
+# that the runtime entrypoint refuses to start with. Anything secret baked
+# into a Docker image layer can be extracted by `docker save | tar -xO`, so
+# real secrets are injected at `docker run` time via env vars / compose.
+#
+# BUILD_NEXTAUTH_SECRET / BUILD_JWT_SECRET can be overridden with --build-arg
+# only if a CI step needs deterministic build output; otherwise leave them
+# at the default and the entrypoint will reject them at boot.
+ARG BUILD_NEXTAUTH_SECRET=DO_NOT_USE_AT_RUNTIME_REPLACE_VIA_ENV
+ARG BUILD_JWT_SECRET=DO_NOT_USE_AT_RUNTIME_REPLACE_VIA_ENV
+ENV NEXTAUTH_SECRET=$BUILD_NEXTAUTH_SECRET
+ENV JWT_SECRET=$BUILD_JWT_SECRET
 ENV NEXTAUTH_URL=http://localhost:3030
+# Surface high-severity prod-dep CVEs in the build log so they're impossible
+# to miss. `|| true` keeps the build non-fatal — we want visibility, not a
+# brittle "your build broke because some transitive moved" pipeline.
+RUN npm audit --omit=dev --audit-level=high || true
 RUN npm run build
 
 FROM base AS development
@@ -33,8 +48,15 @@ RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+# Entrypoint asserts runtime-required secrets are not the build-time
+# placeholders and meet a minimum length before exec'ing node server.js.
+COPY --chown=nextjs:nodejs scripts/docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod 755 /app/docker-entrypoint.sh
+# Run as the unprivileged `nextjs` user (uid 1001). Combined with
+# `read_only: true` in docker-compose.yml, this drops the container's
+# write surface to /tmp + named volumes.
 USER nextjs
 EXPOSE 3030
 ENV PORT=3030
 ENV HOSTNAME="0.0.0.0"
-CMD ["node", "server.js"]
+CMD ["sh", "/app/docker-entrypoint.sh"]
