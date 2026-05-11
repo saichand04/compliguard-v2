@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
-import { validateApiKey } from '@/lib/api/api-key-auth'
-import { hasMCPReadAccess } from '@/lib/mcp/auth'
-import { executeNLQuery } from '@/lib/mcp/nl-query'
+import { validateApiKey, hasScope } from '@/lib/api/api-key-auth'
+import { hasMCPReadAccess, hasMCPWriteAccess } from '@/lib/mcp/auth'
+import { executeNLQuery, type NLQueryScopes } from '@/lib/mcp/nl-query'
+import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
 import { db } from '@/lib/db'
 import { auditLogs } from '@/lib/db/schema'
 
@@ -42,6 +43,10 @@ export async function POST(req: NextRequest) {
   let orgId: string
   let userId: string
   let rateLimitKey: string
+  // RBAC-derived scopes — controls which write tools the NL agent may invoke.
+  // For session auth we map role -> permissions; for API-key auth we map
+  // MCP scopes -> permissions. Read tools are always exposed.
+  let scopes: NLQueryScopes
 
   const session = await requireAuth(req)
 
@@ -49,6 +54,14 @@ export async function POST(req: NextRequest) {
     orgId = session.orgId!
     userId = session.userId
     rateLimitKey = `session:${userId}`
+    // Map RBAC permissions to NL-Query write scopes. Even though this branch
+    // bypasses the API-key scope check, we MUST NOT let a low-privilege user
+    // create findings or update tasks via the agent loop.
+    scopes = {
+      canCreateFindings: hasPermission(session.role, PERMISSIONS.CREATE_FINDINGS),
+      canUpdateTasks:    hasPermission(session.role, PERMISSIONS.EDIT_TASKS),
+      canEditEvidence:   hasPermission(session.role, PERMISSIONS.EDIT_EVIDENCE),
+    }
   } else {
     // Try API key auth
     const apiKeyCtx = await validateApiKey(req)
@@ -61,6 +74,15 @@ export async function POST(req: NextRequest) {
     orgId = apiKeyCtx.orgId
     userId = `apikey:${apiKeyCtx.apiKeyId}`
     rateLimitKey = `apikey:${apiKeyCtx.apiKeyId}`
+    // For API keys, mcp:write (or admin:*/mcp:admin) unlocks write tools.
+    const apiKeyCanWrite = hasMCPWriteAccess(apiKeyCtx.scopes)
+    scopes = {
+      canCreateFindings: apiKeyCanWrite,
+      canUpdateTasks:    apiKeyCanWrite,
+      // Evidence writes via NL agent require explicit admin:* (no dedicated
+      // mcp:evidence scope exists yet — be conservative).
+      canEditEvidence:   hasScope(apiKeyCtx.scopes, 'admin:*'),
+    }
   }
 
   // --- Rate limit ---
@@ -122,6 +144,7 @@ export async function POST(req: NextRequest) {
       query: query.trim(),
       orgId,
       userId,
+      scopes,
       conversationHistory: history ?? [],
       maxToolCalls: 3,
     })

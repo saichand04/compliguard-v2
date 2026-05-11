@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { validateApiKey, hasScope } from '@/lib/api/api-key-auth'
 import { MCP_TOOLS, dispatchTool } from '@/lib/mcp/tools'
 import type { MCPRequest, MCPResponse } from '@/lib/mcp/types'
+import { enforceMcpRateLimit, RateLimitError } from '@/lib/mcp/auth'
+import { authLimiter } from '@/lib/rate-limiter'
+
+const MCP_WRITE_TOOLS = new Set(['create_finding', 'update_task_status'])
+function isWriteTool(name: string): boolean {
+  return MCP_WRITE_TOOLS.has(name)
+}
+
+function getClientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown'
+  )
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +45,23 @@ function jsonRpcResult(id: string | number, result: unknown): MCPResponse {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Per-IP brute-force limit on failed auth attempts. We only *consume* on
+  // failure (below) so legitimate callers aren't punished.
+  const clientIp = getClientIp(request)
+
   // API key authentication
   const keyCtx = await validateApiKey(request)
   if (!keyCtx) {
+    // Consume a failed-auth point. After 10 failures in 15 minutes the IP is
+    // blocked for 15 minutes (configured in lib/rate-limiter.ts).
+    try {
+      await authLimiter.consume(`mcp-auth:${clientIp}`)
+    } catch {
+      return NextResponse.json(
+        { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Too many failed authentication attempts. Try again later.' } },
+        { status: 429 }
+      )
+    }
     return NextResponse.json(
       { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'Unauthorized: valid Bearer API key required' } },
       { status: 401 }
@@ -114,8 +143,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         // For write tools, require mcp:write or admin:*
-        const writeTools = ['create_finding', 'update_task_status']
-        if (writeTools.includes(toolName)) {
+        const writeTool = isWriteTool(toolName)
+        if (writeTool) {
           const hasWrite = hasScope(keyCtx.scopes, 'mcp:write') || hasScope(keyCtx.scopes, 'admin:*')
           if (!hasWrite) {
             return NextResponse.json(
@@ -123,6 +152,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               { status: 403 }
             )
           }
+        }
+
+        // Per-API-key sliding-window rate limit (read vs write scope).
+        try {
+          await enforceMcpRateLimit(keyCtx.apiKeyId, writeTool ? 'write' : 'read')
+        } catch (rlErr) {
+          if (rlErr instanceof RateLimitError) {
+            return NextResponse.json(
+              { ...jsonRpcError(id, -32002, 'rate limit exceeded'), retryAfter: rlErr.retryAfter },
+              { status: 429, headers: { 'Retry-After': String(rlErr.retryAfter) } },
+            )
+          }
+          throw rlErr
         }
 
         const result = await dispatchTool(toolName, toolArgs, keyCtx.orgId)

@@ -42,44 +42,131 @@ export function hasMCPAdminAccess(scopes: string[]): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Rate limiting — sliding-window, in-memory
+// Rate limiting — true sliding-window, in-memory
 // 100 req/min for mcp:read, 20 req/min for mcp:write
+//
+// Strategy: per-key deque of request timestamps. On each call we discard
+// entries older than `now - WINDOW_MS` and append the new one; we refuse the
+// request if the resulting deque size exceeds the limit. This avoids the
+// fixed-window burst problem (where the old `count`/`resetAt` scheme would
+// let a caller fire `limit` requests just before the boundary and another
+// `limit` requests immediately after).
 // ---------------------------------------------------------------------------
 
-export interface RateLimitState {
-  count: number
-  resetAt: number // Unix timestamp (ms)
+export class RateLimitError extends Error {
+  retryAfter: number
+  constructor(message: string, retryAfter: number) {
+    super(message)
+    this.name = 'RateLimitError'
+    this.retryAfter = retryAfter
+  }
 }
 
-const rateLimitMap = new Map<string, RateLimitState>()
+export type MCPRateScope = 'read' | 'write'
+
+const rateLimitBuckets = new Map<string, number[]>()
 
 const RATE_LIMIT_READ  = 100
 const RATE_LIMIT_WRITE = 20
 const WINDOW_MS        = 60_000 // 1 minute
 
+function bucketKey(keyId: string, scope: MCPRateScope): string {
+  return `${scope}:${keyId}`
+}
+
+function pruneAndAppend(
+  key: string,
+  now: number,
+  limit: number,
+): { allowed: boolean; retryAfter: number; size: number } {
+  const windowStart = now - WINDOW_MS
+  let timestamps = rateLimitBuckets.get(key)
+  if (!timestamps) {
+    timestamps = []
+    rateLimitBuckets.set(key, timestamps)
+  }
+
+  // Drop entries older than the window. Timestamps are monotonically appended,
+  // so the array is sorted ascending — find the first index >= windowStart.
+  let drop = 0
+  while (drop < timestamps.length && timestamps[drop] <= windowStart) {
+    drop++
+  }
+  if (drop > 0) {
+    timestamps.splice(0, drop)
+  }
+
+  if (timestamps.length >= limit) {
+    // Oldest timestamp dictates when one slot frees up.
+    const oldest = timestamps[0] ?? now
+    const retryAfter = Math.max(1, Math.ceil((oldest + WINDOW_MS - now) / 1000))
+    return { allowed: false, retryAfter, size: timestamps.length }
+  }
+
+  timestamps.push(now)
+  return { allowed: true, retryAfter: 0, size: timestamps.length }
+}
+
+/**
+ * Non-throwing check, retained for callers that want a boolean result.
+ */
 export function checkRateLimit(
   keyId: string,
   isWrite: boolean,
 ): { allowed: boolean; retryAfter?: number } {
+  const scope: MCPRateScope = isWrite ? 'write' : 'read'
   const limit = isWrite ? RATE_LIMIT_WRITE : RATE_LIMIT_READ
-  const now   = Date.now()
+  const res = pruneAndAppend(bucketKey(keyId, scope), Date.now(), limit)
+  return res.allowed ? { allowed: true } : { allowed: false, retryAfter: res.retryAfter }
+}
 
-  let state = rateLimitMap.get(keyId)
-
-  if (!state || state.resetAt < now) {
-    // New or expired window — reset
-    state = { count: 1, resetAt: now + WINDOW_MS }
-    rateLimitMap.set(keyId, state)
-    return { allowed: true }
+/**
+ * Enforce the MCP rate limit. Throws RateLimitError when exceeded.
+ */
+export async function enforceMcpRateLimit(
+  keyId: string,
+  scope: MCPRateScope,
+): Promise<void> {
+  const limit = scope === 'write' ? RATE_LIMIT_WRITE : RATE_LIMIT_READ
+  const res = pruneAndAppend(bucketKey(keyId, scope), Date.now(), limit)
+  if (!res.allowed) {
+    throw new RateLimitError(
+      `MCP ${scope} rate limit exceeded (${limit} req/${WINDOW_MS / 1000}s)`,
+      res.retryAfter,
+    )
   }
+}
 
-  if (state.count >= limit) {
-    const retryAfter = Math.ceil((state.resetAt - now) / 1000)
-    return { allowed: false, retryAfter }
-  }
+// Periodic cleanup of empty / fully-expired buckets so the Map doesn't grow
+// unboundedly across long-lived processes. Runs every 5 minutes; safe to skip
+// during tests / cold starts because all reads also prune.
+const CLEANUP_INTERVAL_MS = 5 * 60_000
+let cleanupTimer: ReturnType<typeof setInterval> | null = null
 
-  state.count += 1
-  return { allowed: true }
+function startRateLimitCleanup(): void {
+  if (cleanupTimer) return
+  cleanupTimer = setInterval(() => {
+    const cutoff = Date.now() - WINDOW_MS
+    for (const [key, ts] of rateLimitBuckets) {
+      // Drop expired entries.
+      let drop = 0
+      while (drop < ts.length && ts[drop] <= cutoff) drop++
+      if (drop > 0) ts.splice(0, drop)
+      if (ts.length === 0) rateLimitBuckets.delete(key)
+    }
+  }, CLEANUP_INTERVAL_MS)
+  // Don't keep the event loop alive just for cleanup.
+  if (typeof cleanupTimer.unref === 'function') cleanupTimer.unref()
+}
+
+// Initialize on module load in long-lived runtimes.
+if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'test') {
+  try { startRateLimitCleanup() } catch { /* ignore */ }
+}
+
+/** Test-only helper to reset internal state. */
+export function __resetMcpRateLimitForTests(): void {
+  rateLimitBuckets.clear()
 }
 
 // ---------------------------------------------------------------------------

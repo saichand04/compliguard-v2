@@ -6,9 +6,60 @@
  */
 
 import * as net from 'net'
+import { promises as dns } from 'node:dns'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema'
 import { decrypt } from '@/lib/encryption'
+// TODO(security-A2): safeFetch is provided by lib/security/ssrf-guard.ts which
+// is being added by parallel agent A2. Until that PR lands this import will
+// fail typecheck — leave it in place; do not stub it locally.
+import { safeFetch } from '@/lib/security/ssrf-guard'
+
+// ── SSRF helpers (duplicated guards in case safeFetch is bypassed) ────────────
+
+const PRIVATE_PREFIXES_V4 = [
+  '0.', '10.', '127.', '169.254.', '172.16.', '172.17.', '172.18.', '172.19.',
+  '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.',
+  '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', '192.168.',
+]
+
+function isPrivateAddrLocal(ip: string): boolean {
+  if (net.isIPv4(ip)) return PRIVATE_PREFIXES_V4.some(p => ip.startsWith(p))
+  if (net.isIPv6(ip)) {
+    const lc = ip.toLowerCase()
+    if (lc === '::1' || lc === '::') return true
+    if (lc.startsWith('fe80:') || lc.startsWith('fc') || lc.startsWith('fd')) return true
+    if (lc.startsWith('::ffff:')) {
+      const m = lc.replace(/^::ffff:/, '')
+      if (net.isIPv4(m)) return isPrivateAddrLocal(m)
+    }
+  }
+  return false
+}
+
+/**
+ * Resolve `hostOrUrl` (DNS) and refuse if any address is private/link-local/
+ * metadata. Called immediately before each external probe — defeats DNS
+ * rebinding attacks that flip a public hostname to 169.254.169.254 after the
+ * upfront route-level check.
+ */
+async function assertSafeHost(hostOrUrl: string): Promise<void> {
+  let host = hostOrUrl
+  try {
+    if (/^https?:\/\//i.test(hostOrUrl)) host = new URL(hostOrUrl).hostname
+  } catch { /* keep original */ }
+  if (net.isIP(host)) {
+    if (isPrivateAddrLocal(host)) throw new Error(`Refusing to probe private/loopback address ${host}`)
+    return
+  }
+  const records = await dns.lookup(host, { all: true, verbatim: true })
+  if (!records.length) throw new Error(`Unable to resolve ${host}`)
+  for (const r of records) {
+    if (isPrivateAddrLocal(r.address)) {
+      throw new Error(`Hostname ${host} resolves to private address ${r.address}`)
+    }
+  }
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -167,7 +218,8 @@ async function runSslCheck(domain: string): Promise<NLTestResult> {
   const start = Date.now()
   try {
     const url = domain.startsWith('http') ? domain : `https://${domain}`
-    const res = await fetch(url, { method: 'HEAD' })
+    await assertSafeHost(url)
+    const res = await safeFetch(url, { method: 'HEAD' })
     const duration = Date.now() - start
     if (res.ok || res.status < 500) {
       return {
@@ -193,9 +245,44 @@ async function runSslCheck(domain: string): Promise<NLTestResult> {
   }
 }
 
+// Useful subset of ports a pentest may probe. If a caller asks for a port
+// outside this list we refuse — prevents weaponising the port scanner as a
+// general-purpose internal port sweeper.
+const ALLOWED_PORTS = [22, 80, 443, 3389, 5432, 6379, 25, 587, 110, 143]
+const MAX_PORT_INDEX = 1024
+const SENSITIVE_PORTS = [22, 23, 3389, 5900, 1433, 3306, 5432, 6379, 27017]
+
 async function runPortScan(host: string, port: number): Promise<NLTestResult> {
   const start = Date.now()
-  const SENSITIVE_PORTS = [22, 23, 3389, 5900, 1433, 3306, 5432, 6379, 27017]
+
+  // 1. Port bounds + allow-list (cap to first 1024, only allow useful subset).
+  if (!Number.isInteger(port) || port < 1 || port > MAX_PORT_INDEX) {
+    return {
+      passed: false,
+      output: `Port ${port} is out of allowed range 1..${MAX_PORT_INDEX}.`,
+      duration: Date.now() - start,
+    }
+  }
+  if (!ALLOWED_PORTS.includes(port)) {
+    return {
+      passed: false,
+      output: `Port ${port} is not in the allow-list of permitted scan ports: ${ALLOWED_PORTS.join(', ')}.`,
+      duration: Date.now() - start,
+    }
+  }
+
+  // 2. SSRF: refuse if host resolves to a private/loopback/link-local address.
+  try {
+    await assertSafeHost(host)
+  } catch (err) {
+    return {
+      passed: false,
+      output: `Port scan refused: ${err instanceof Error ? err.message : String(err)}`,
+      duration: Date.now() - start,
+      error: String(err),
+    }
+  }
+
   const isSensitive = SENSITIVE_PORTS.includes(port)
 
   const isOpen = await new Promise<boolean>((resolve) => {
@@ -242,7 +329,8 @@ async function runHttpCheck(domain: string): Promise<NLTestResult> {
   const start = Date.now()
   try {
     const url = `http://${domain}`
-    const res = await fetch(url, { redirect: 'follow' })
+    await assertSafeHost(url)
+    const res = await safeFetch(url, { redirect: 'follow' })
     const duration = Date.now() - start
     const finalUrl = res.url
     const redirectedToHttps = finalUrl.startsWith('https://')
@@ -275,12 +363,12 @@ async function runDnsCheck(domain: string): Promise<NLTestResult> {
 
   try {
     // Check DMARC
-    const dmarcRes = await fetch(`${dnsApi}?name=_dmarc.${domain}&type=TXT`, { headers })
+    const dmarcRes = await safeFetch(`${dnsApi}?name=_dmarc.${domain}&type=TXT`, { headers })
     const dmarcData = await dmarcRes.json() as { Answer?: Array<{ data: string }> }
     const hasDmarc = dmarcData.Answer?.some(a => a.data.includes('v=DMARC1')) ?? false
 
     // Check SPF
-    const spfRes = await fetch(`${dnsApi}?name=${domain}&type=TXT`, { headers })
+    const spfRes = await safeFetch(`${dnsApi}?name=${domain}&type=TXT`, { headers })
     const spfData = await spfRes.json() as { Answer?: Array<{ data: string }> }
     const hasSpf = spfData.Answer?.some(a => a.data.includes('v=spf1')) ?? false
 
@@ -320,7 +408,8 @@ async function runHeaderCheck(target: string): Promise<NLTestResult> {
   ]
   try {
     const url = target.startsWith('http') ? target : `https://${target}`
-    const res = await fetch(url, { method: 'HEAD' })
+    await assertSafeHost(url)
+    const res = await safeFetch(url, { method: 'HEAD' })
     const duration = Date.now() - start
 
     const present: string[] = []
@@ -355,8 +444,9 @@ async function runCertificateExpiryCheck(domain: string): Promise<NLTestResult> 
   const start = Date.now()
   const cleanDomain = extractDomain(domain)
   try {
-    // Primary: CertSpotter API
-    const certRes = await fetch(
+    // Primary: CertSpotter API (public endpoint — still routed through safeFetch
+    // so SSRF tampering at the URL level is blocked).
+    const certRes = await safeFetch(
       `https://api.certspotter.com/v1/issuances?domain=${cleanDomain}&include_subdomains=true&expand=dns_names`,
     )
     const duration = Date.now() - start
@@ -420,8 +510,9 @@ async function runTlsVersionCheck(target: string): Promise<NLTestResult> {
   const start = Date.now()
   try {
     const url = target.startsWith('http') ? target : `https://${target}`
+    await assertSafeHost(url)
     // Node.js fetch/https uses system TLS which enforces TLS 1.2+ by default
-    const res = await fetch(url, { method: 'HEAD' })
+    const res = await safeFetch(url, { method: 'HEAD' })
     const duration = Date.now() - start
     return {
       passed: true,
@@ -446,7 +537,8 @@ async function runCorsCheck(target: string): Promise<NLTestResult> {
   const start = Date.now()
   try {
     const url = target.startsWith('http') ? target : `https://${target}`
-    const res = await fetch(url, {
+    await assertSafeHost(url)
+    const res = await safeFetch(url, {
       method: 'OPTIONS',
       headers: { Origin: 'https://example.com', 'Access-Control-Request-Method': 'GET' },
     })
@@ -481,7 +573,8 @@ async function runResponseCodeCheck(target: string, expectedCode: number): Promi
   const start = Date.now()
   try {
     const url = target.startsWith('http') ? target : `https://${target}`
-    const res = await fetch(url, { method: 'GET' })
+    await assertSafeHost(url)
+    const res = await safeFetch(url, { method: 'GET' })
     const duration = Date.now() - start
     const passed = res.status === expectedCode
 
@@ -528,14 +621,19 @@ async function getAiConfig(): Promise<{ provider: string; model: string; apiKey:
 async function runAiCustomCheck(query: string, target: string): Promise<NLTestResult> {
   const start = Date.now()
 
-  // Try to fetch the target URL for context
+  // Try to fetch the target URL for context. CRITICAL: an LLM-generated
+  // test plan can include arbitrary hostnames in the query string (which is
+  // how `target` is extracted), so we re-validate the hostname at execution
+  // time. Defeats prompt-injection attempts that try to coax this code into
+  // hitting an internal service.
   let httpContext = ''
   if (target) {
     try {
       const url = target.startsWith('http') ? target : `https://${target}`
-      const res = await fetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
+      await assertSafeHost(url)
+      const res = await safeFetch(url, { method: 'GET', signal: AbortSignal.timeout(5000) })
       const headersObj: Record<string, string> = {}
-      res.headers.forEach((v, k) => { headersObj[k] = v })
+      res.headers.forEach((v: string, k: string) => { headersObj[k] = v })
       httpContext = `\nHTTP response: status=${res.status}, headers=${JSON.stringify(headersObj)}`
     } catch (e) {
       httpContext = `\nHTTP fetch error: ${e instanceof Error ? e.message : String(e)}`
@@ -568,7 +666,7 @@ Respond in JSON format:
     let responseText = ''
 
     if (aiConfig.provider === 'anthropic') {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await safeFetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'x-api-key': aiConfig.apiKey,
@@ -584,11 +682,13 @@ Respond in JSON format:
       const data = await res.json() as { content?: Array<{ text?: string }> }
       responseText = data.content?.[0]?.text ?? ''
     } else {
-      // OpenAI-compatible
-      const baseUrl = aiConfig.provider === 'openai'
-        ? 'https://api.openai.com/v1'
-        : 'http://localhost:11434/v1'
-      const res = await fetch(`${baseUrl}/chat/completions`, {
+      // OpenAI-compatible. For ollama the endpoint is an explicitly
+      // operator-configured local URL, so we keep plain fetch (safeFetch
+      // would refuse loopback). For openai we route through safeFetch.
+      const isOllama = aiConfig.provider !== 'openai'
+      const baseUrl = isOllama ? 'http://localhost:11434/v1' : 'https://api.openai.com/v1'
+      const fetchImpl = isOllama ? fetch : safeFetch
+      const res = await fetchImpl(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${aiConfig.apiKey}`,
