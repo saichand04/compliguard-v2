@@ -818,6 +818,15 @@ run_deploy() {
     app_container=$(docker ps --filter "name=compliguard.*app" --format "{{.ID}}" | head -1)
   fi
 
+  # Wait for the app container to be running and node to be available
+  # (bcrypt hashing depends on docker exec into this container)
+  local app_attempts=0
+  until docker exec "$app_container" node -e 'process.exit(0)' &>/dev/null 2>&1 || (( ++app_attempts >= 30 )); do
+    echo -en "\r  ${CYAN}  Waiting for app container runtime... (${app_attempts}/30)${RESET}  "
+    sleep 2
+  done
+  [[ $app_attempts -gt 0 ]] && echo ""
+
   # Apply migrations via psql — drizzle-kit is NOT available in the standalone production image
   # IMPORTANT: Drizzle SQL files embed '--> statement-breakpoint' as an INLINE SUFFIX on the same
   # line as each statement (e.g. 'CREATE TYPE ...;--> statement-breakpoint'). We must strip this
