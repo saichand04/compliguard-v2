@@ -1,13 +1,106 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { comments, commentMentions, notifications, users } from '@/lib/db/schema'
+import {
+  comments, commentMentions, notifications, users,
+  evidence, findings, tasks, vendors, policies,
+  riskAssessments, controlAssignments,
+} from '@/lib/db/schema'
 import { eq, and, isNull, asc } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+// ── Parent-entity validator (C10) ─────────────────────────────────────────────
+//
+// For a given entityType + entityId, confirm the row exists AND belongs to the
+// caller's org. Returns true when accessible.
+//
+// `control` is special: there is no per-org control row — instead we verify
+// the caller's org has an assignment for the control (i.e. is using it).
+async function entityBelongsToOrg(
+  entityType: string,
+  entityId: string,
+  orgId: string,
+): Promise<boolean> {
+  try {
+    switch (entityType) {
+      case 'finding': {
+        const [row] = await db
+          .select({ id: findings.id })
+          .from(findings)
+          .where(and(eq(findings.id, entityId), eq(findings.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'task': {
+        const [row] = await db
+          .select({ id: tasks.id })
+          .from(tasks)
+          .where(and(eq(tasks.id, entityId), eq(tasks.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'vendor': {
+        const [row] = await db
+          .select({ id: vendors.id })
+          .from(vendors)
+          .where(and(eq(vendors.id, entityId), eq(vendors.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'evidence': {
+        const [row] = await db
+          .select({ id: evidence.id })
+          .from(evidence)
+          .where(and(eq(evidence.id, entityId), eq(evidence.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'policy': {
+        const [row] = await db
+          .select({ id: policies.id })
+          .from(policies)
+          .where(and(eq(policies.id, entityId), eq(policies.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'risk': {
+        const [row] = await db
+          .select({ id: riskAssessments.id })
+          .from(riskAssessments)
+          .where(and(eq(riskAssessments.id, entityId), eq(riskAssessments.organizationId, orgId)))
+          .limit(1)
+        return !!row
+      }
+      case 'control': {
+        // Controls are platform-wide; verify the caller's org has an
+        // assignment for this control (i.e. is actually using it).
+        const [row] = await db
+          .select({ id: controlAssignments.id })
+          .from(controlAssignments)
+          .where(and(
+            eq(controlAssignments.controlId, entityId),
+            eq(controlAssignments.organizationId, orgId),
+          ))
+          .limit(1)
+        return !!row
+      }
+      default:
+        return false
+    }
+  } catch (err) {
+    logger.error({ err, entityType, entityId, orgId }, 'comments.entityBelongsToOrg failed')
+    return false
+  }
+}
+
+const uuidSchema = z.string().uuid()
 
 // ── GET /api/comments?entityType=control&entityId=xxx ─────────────────────────
 export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (!session.orgId) return ApiErrors.badRequest('User must belong to an organization')
 
   const { searchParams } = new URL(req.url)
   const entityType = searchParams.get('entityType')
@@ -16,8 +109,15 @@ export async function GET(req: NextRequest) {
   if (!entityType || !entityId) {
     return ApiErrors.badRequest('entityType and entityId are required')
   }
+  if (!uuidSchema.safeParse(entityId).success) {
+    return ApiErrors.badRequest('Invalid entityId')
+  }
 
-  // Fetch top-level comments (no parent) ordered by creation time
+  if (!(await entityBelongsToOrg(entityType, entityId, session.orgId))) {
+    return ApiErrors.notFound('Entity')
+  }
+
+  // Fetch top-level comments (no parent) ordered by creation time, scoped to org
   const topLevelComments = await db
     .select({
       id: comments.id,
@@ -38,6 +138,7 @@ export async function GET(req: NextRequest) {
     .leftJoin(users, eq(comments.authorId, users.id))
     .where(
       and(
+        eq(comments.organizationId, session.orgId),
         eq(comments.entityType, entityType),
         eq(comments.entityId, entityId),
         isNull(comments.parentCommentId)
@@ -71,6 +172,7 @@ export async function GET(req: NextRequest) {
       .leftJoin(users, eq(comments.authorId, users.id))
       .where(
         and(
+          eq(comments.organizationId, session.orgId),
           eq(comments.entityType, entityType),
           eq(comments.entityId, entityId)
         )
@@ -92,6 +194,13 @@ export async function GET(req: NextRequest) {
 }
 
 // ── POST /api/comments ────────────────────────────────────────────────────────
+const postSchema = z.object({
+  entityType: z.string().min(1),
+  entityId: z.string().uuid(),
+  body: z.string().min(1),
+  parentCommentId: z.string().uuid().optional().nullable(),
+}).strict()
+
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
@@ -100,14 +209,35 @@ export async function POST(req: NextRequest) {
     return ApiErrors.badRequest('User must belong to an organization')
   }
 
-  const body = await req.json()
-  const { entityType, entityId, body: commentBody, parentCommentId } = body
+  let raw: unknown
+  try { raw = await req.json() } catch { return ApiErrors.badRequest('Invalid JSON') }
 
-  if (!entityType || !entityId || !commentBody?.trim()) {
-    return ApiErrors.badRequest('entityType, entityId, and body are required')
+  const parsed = postSchema.safeParse(raw)
+  if (!parsed.success) return ApiErrors.badRequest(parsed.error.issues[0].message)
+
+  const { entityType, entityId, body: commentBody, parentCommentId } = parsed.data
+  if (!commentBody.trim()) return ApiErrors.badRequest('body is required')
+
+  if (!(await entityBelongsToOrg(entityType, entityId, session.orgId))) {
+    return ApiErrors.notFound('Entity')
   }
 
-  // Create the comment
+  // If replying, the parent comment must also be in the same org/entity.
+  if (parentCommentId) {
+    const [parent] = await db
+      .select({ id: comments.id })
+      .from(comments)
+      .where(and(
+        eq(comments.id, parentCommentId),
+        eq(comments.organizationId, session.orgId),
+        eq(comments.entityType, entityType),
+        eq(comments.entityId, entityId),
+      ))
+      .limit(1)
+    if (!parent) return ApiErrors.badRequest('Invalid parentCommentId')
+  }
+
+  // Create the comment — organizationId is FORCED from session.
   const [created] = await db
     .insert(comments)
     .values({
@@ -175,8 +305,9 @@ export async function POST(req: NextRequest) {
             )
         }
       }
-    } catch {
+    } catch (err) {
       // Don't fail the request if mention processing fails
+      logger.warn({ err, commentId: created.id }, 'comments.mention-processing failed')
     }
   }
 
@@ -208,6 +339,7 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (!session.orgId) return ApiErrors.badRequest('User must belong to an organization')
 
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
@@ -215,19 +347,26 @@ export async function PATCH(req: NextRequest) {
   if (!id) {
     return ApiErrors.badRequest('Comment id is required as query param ?id=...')
   }
+  if (!uuidSchema.safeParse(id).success) {
+    return ApiErrors.badRequest('Invalid id')
+  }
 
-  const body = await req.json()
-  const { body: newBody } = body
+  const body = await req.json().catch(() => null) as { body?: string } | null
+  const newBody = body?.body
 
   if (!newBody?.trim()) {
     return ApiErrors.badRequest('body is required')
   }
 
-  // Verify authorship
+  // Verify authorship AND org match (C10)
   const [existing] = await db
     .select()
     .from(comments)
-    .where(and(eq(comments.id, id), eq(comments.authorId, session.userId)))
+    .where(and(
+      eq(comments.id, id),
+      eq(comments.authorId, session.userId),
+      eq(comments.organizationId, session.orgId),
+    ))
 
   if (!existing) {
     return ApiErrors.forbidden()
@@ -241,7 +380,11 @@ export async function PATCH(req: NextRequest) {
       editedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(comments.id, id))
+    .where(and(
+      eq(comments.id, id),
+      eq(comments.authorId, session.userId),
+      eq(comments.organizationId, session.orgId),
+    ))
     .returning()
 
   return NextResponse.json({ comment: updated })
@@ -251,6 +394,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (!session.orgId) return ApiErrors.badRequest('User must belong to an organization')
 
   const { searchParams } = new URL(req.url)
   const id = searchParams.get('id')
@@ -258,22 +402,32 @@ export async function DELETE(req: NextRequest) {
   if (!id) {
     return ApiErrors.badRequest('Comment id is required as query param ?id=...')
   }
+  if (!uuidSchema.safeParse(id).success) {
+    return ApiErrors.badRequest('Invalid id')
+  }
 
-  // Verify authorship
+  // Verify authorship AND org match (C10)
   const [existing] = await db
     .select()
     .from(comments)
-    .where(and(eq(comments.id, id), eq(comments.authorId, session.userId)))
+    .where(and(
+      eq(comments.id, id),
+      eq(comments.authorId, session.userId),
+      eq(comments.organizationId, session.orgId),
+    ))
 
   if (!existing) {
     return ApiErrors.forbidden()
   }
 
-  // Check if this comment has replies
+  // Check if this comment has replies — scope reply check to same org.
   const replies = await db
     .select({ id: comments.id })
     .from(comments)
-    .where(eq(comments.parentCommentId, id))
+    .where(and(
+      eq(comments.parentCommentId, id),
+      eq(comments.organizationId, session.orgId),
+    ))
     .limit(1)
 
   if (replies.length > 0) {
@@ -281,10 +435,28 @@ export async function DELETE(req: NextRequest) {
     await db
       .update(comments)
       .set({ body: '[deleted]', updatedAt: new Date() })
-      .where(eq(comments.id, id))
+      .where(and(
+        eq(comments.id, id),
+        eq(comments.organizationId, session.orgId),
+      ))
   } else {
-    // Hard delete
-    await db.delete(comments).where(eq(comments.id, id))
+    // Hard delete — log first
+    const { logAudit } = await import('@/lib/audit/log')
+    await logAudit({
+      organizationId: session.orgId,
+      userId: session.userId,
+      action: 'comment.delete',
+      entityType: 'comment',
+      entityId: id,
+      entityTitle: existing.body.slice(0, 100),
+      before: existing,
+      description: 'Deleted comment',
+      request: req,
+    })
+    await db.delete(comments).where(and(
+      eq(comments.id, id),
+      eq(comments.organizationId, session.orgId),
+    ))
   }
 
   return NextResponse.json({ ok: true })

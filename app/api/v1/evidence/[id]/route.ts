@@ -3,6 +3,10 @@ import { db } from '@/lib/db'
 import { evidence } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { validateApiKey, hasScope } from '@/lib/api/api-key-auth'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+const uuidSchema = z.string().uuid()
 
 export async function GET(
   request: NextRequest,
@@ -17,6 +21,9 @@ export async function GET(
   }
   const { orgId } = apiKeyData
   const { id } = await params
+  if (!uuidSchema.safeParse(id).success) {
+    return NextResponse.json({ success: false, error: 'Invalid id', code: 'BAD_REQUEST' }, { status: 400 })
+  }
 
   try {
     const [record] = await db
@@ -30,7 +37,8 @@ export async function GET(
     }
 
     return NextResponse.json({ success: true, data: record })
-  } catch {
+  } catch (err) {
+    logger.error({ err, id }, 'v1.evidence.get failed')
     return NextResponse.json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }

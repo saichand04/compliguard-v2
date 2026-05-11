@@ -6,6 +6,8 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
+import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
+import { logger } from '@/lib/logger'
 
 // GET /api/audit/controls?frameworkId=xxx
 // Returns controls with status and evidence counts for auditor view
@@ -13,6 +15,7 @@ export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
   if (!session.orgId) return ApiErrors.badRequest('No organisation associated with session')
+  if (!hasPermission(session.role, PERMISSIONS.VIEW_AUDIT_LOGS)) return ApiErrors.forbidden()
 
   const { searchParams } = req.nextUrl
   const frameworkId = searchParams.get('frameworkId')
@@ -99,7 +102,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ controls: allControls, total: allControls.length })
   } catch (err) {
-    console.error('[audit/controls GET]', err)
+    logger.error({ err }, 'audit.controls failed')
     return ApiErrors.internal()
   }
 }

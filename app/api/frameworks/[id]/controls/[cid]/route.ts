@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { controls } from '@/lib/db/schema'
+import { controls, frameworks } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requireAuth, ApiErrors, writeAuditLog } from '@/lib/api/auth-helper'
 import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
+import { logger } from '@/lib/logger'
 import { z } from 'zod'
+
+// TODO(security): scope frameworks per-org. Until that schema change, gate
+// control writes to super_admin and reject built-in frameworks.
+
+const uuidSchema = z.string().uuid()
 
 const patchSchema = z.object({
   controlId: z.string().optional(),
@@ -15,7 +21,7 @@ const patchSchema = z.object({
   guidance: z.string().optional(),
   notes: z.string().optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
-})
+}).strict()
 
 /**
  * PATCH /api/frameworks/[id]/controls/[cid]
@@ -27,9 +33,17 @@ export async function PATCH(
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
   if (!hasPermission(session.role, PERMISSIONS.EDIT_FRAMEWORKS)) return ApiErrors.forbidden()
 
   const { id, cid } = await params
+  if (!uuidSchema.safeParse(id).success) return ApiErrors.badRequest('Invalid id')
+  if (!uuidSchema.safeParse(cid).success) return ApiErrors.badRequest('Invalid cid')
+
+  // Refuse built-in frameworks.
+  const [parentFw] = await db.select({ isBuiltIn: frameworks.isBuiltIn }).from(frameworks).where(eq(frameworks.id, id))
+  if (!parentFw) return ApiErrors.notFound('Framework')
+  if (parentFw.isBuiltIn === true) return ApiErrors.forbidden()
 
   const [existing] = await db
     .select()
@@ -55,26 +69,31 @@ export async function PATCH(
     metadata = { ...(metadata || {}), ...updateData.metadata }
   }
 
-  const [updated] = await db
-    .update(controls)
-    .set({ ...updateData, metadata, updatedAt: new Date() })
-    .where(and(eq(controls.id, cid), eq(controls.frameworkId, id)))
-    .returning()
+  try {
+    const [updated] = await db
+      .update(controls)
+      .set({ ...updateData, metadata, updatedAt: new Date() })
+      .where(and(eq(controls.id, cid), eq(controls.frameworkId, id)))
+      .returning()
 
-  await writeAuditLog({
-    organizationId: session.orgId,
-    userId: session.userId,
-    action: 'control.update',
-    resourceType: 'control',
-    resourceId: cid,
-    resourceTitle: updated.title,
-    description: `Updated control ${updated.controlId ?? cid}`,
-    before: existing,
-    after: updated,
-    request: req,
-  })
+    await writeAuditLog({
+      organizationId: session.orgId,
+      userId: session.userId,
+      action: 'control.update',
+      resourceType: 'control',
+      resourceId: cid,
+      resourceTitle: updated.title,
+      description: `Updated control ${updated.controlId ?? cid}`,
+      before: existing,
+      after: updated,
+      request: req,
+    })
 
-  return NextResponse.json({ control: updated })
+    return NextResponse.json({ control: updated })
+  } catch (err) {
+    logger.error({ err, id, cid }, 'control.update failed')
+    return ApiErrors.internal()
+  }
 }
 
 /**
@@ -87,9 +106,16 @@ export async function DELETE(
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
   if (!hasPermission(session.role, PERMISSIONS.EDIT_FRAMEWORKS)) return ApiErrors.forbidden()
 
   const { id, cid } = await params
+  if (!uuidSchema.safeParse(id).success) return ApiErrors.badRequest('Invalid id')
+  if (!uuidSchema.safeParse(cid).success) return ApiErrors.badRequest('Invalid cid')
+
+  const [parentFw] = await db.select({ isBuiltIn: frameworks.isBuiltIn }).from(frameworks).where(eq(frameworks.id, id))
+  if (!parentFw) return ApiErrors.notFound('Framework')
+  if (parentFw.isBuiltIn === true) return ApiErrors.forbidden()
 
   const [ctrl] = await db
     .select()
@@ -97,8 +123,6 @@ export async function DELETE(
     .where(and(eq(controls.id, cid), eq(controls.frameworkId, id)))
 
   if (!ctrl) return ApiErrors.notFound('Control')
-
-  await db.delete(controls).where(and(eq(controls.id, cid), eq(controls.frameworkId, id)))
 
   await writeAuditLog({
     organizationId: session.orgId,
@@ -108,8 +132,15 @@ export async function DELETE(
     resourceId: cid,
     resourceTitle: ctrl.title,
     description: `Deleted control ${ctrl.controlId ?? cid}`,
+    before: ctrl,
     request: req,
   })
 
-  return NextResponse.json({ success: true })
+  try {
+    await db.delete(controls).where(and(eq(controls.id, cid), eq(controls.frameworkId, id)))
+    return NextResponse.json({ success: true })
+  } catch (err) {
+    logger.error({ err, id, cid }, 'control.delete failed')
+    return ApiErrors.internal()
+  }
 }

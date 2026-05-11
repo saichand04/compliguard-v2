@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { controls, controlAssignments } from '@/lib/db/schema'
+import { controls, controlAssignments, users } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { validateApiKey, hasScope } from '@/lib/api/api-key-auth'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+const uuidSchema = z.string().uuid()
+
+const controlStatus = z.enum(['not_started', 'in_progress', 'implemented', 'needs_review', 'not_applicable'])
+
+const patchSchema = z.object({
+  status: controlStatus.optional(),
+  notes: z.string().optional(),
+  assignedTo: z.string().uuid().nullable().optional(),
+}).strict()
 
 export async function GET(
   request: NextRequest,
@@ -17,6 +29,9 @@ export async function GET(
   }
   const { orgId } = apiKeyData
   const { id } = await params
+  if (!uuidSchema.safeParse(id).success) {
+    return NextResponse.json({ success: false, error: 'Invalid id', code: 'BAD_REQUEST' }, { status: 400 })
+  }
 
   try {
     const [result] = await db
@@ -34,7 +49,8 @@ export async function GET(
       success: true,
       data: { ...result.control, assignment: result.assignment },
     })
-  } catch {
+  } catch (err) {
+    logger.error({ err, id }, 'v1.controls.get failed')
     return NextResponse.json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }
@@ -52,17 +68,29 @@ export async function PATCH(
   }
   const { orgId } = apiKeyData
   const { id } = await params
-
-  let body: { status?: string; notes?: string; assignedTo?: string }
-  try {
-    body = await request.json()
-  } catch {
-    return NextResponse.json({ success: false, error: 'Invalid JSON body', code: 'BAD_REQUEST' }, { status: 400 })
+  if (!uuidSchema.safeParse(id).success) {
+    return NextResponse.json({ success: false, error: 'Invalid id', code: 'BAD_REQUEST' }, { status: 400 })
   }
 
-  const validStatuses = ['not_started', 'in_progress', 'implemented', 'needs_review', 'not_applicable']
-  if (body.status && !validStatuses.includes(body.status)) {
-    return NextResponse.json({ success: false, error: 'Invalid status value', code: 'BAD_REQUEST' }, { status: 400 })
+  let raw: unknown
+  try { raw = await request.json() } catch {
+    return NextResponse.json({ success: false, error: 'Invalid JSON body', code: 'BAD_REQUEST' }, { status: 400 })
+  }
+  const parsed = patchSchema.safeParse(raw)
+  if (!parsed.success) {
+    return NextResponse.json({ success: false, error: parsed.error.issues[0].message, code: 'BAD_REQUEST' }, { status: 400 })
+  }
+  const body = parsed.data
+
+  if (body.assignedTo) {
+    const [u] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, body.assignedTo), eq(users.organizationId, orgId)))
+      .limit(1)
+    if (!u) {
+      return NextResponse.json({ success: false, error: 'assignedTo does not belong to this organization', code: 'BAD_REQUEST' }, { status: 400 })
+    }
   }
 
   try {
@@ -82,7 +110,8 @@ export async function PATCH(
     }
 
     return NextResponse.json({ success: true, data: updated })
-  } catch {
+  } catch (err) {
+    logger.error({ err, id }, 'v1.controls.update failed')
     return NextResponse.json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }
