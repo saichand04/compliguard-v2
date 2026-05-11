@@ -14,12 +14,10 @@ const PUBLIC_PATHS = [
   '/trust',
   '/upload',                            // Evidence request public upload pages
   '/api/evidence-requests',             // Token-based evidence request upload (GET+POST, no auth)
-  '/api/inbound-email',
-  '/api/webhooks/postmark/inbound',     // Postmark inbound webhook (HMAC-verified)
-  '/api/webhooks/slack',
-  '/api/webhooks/jira',
-  '/api/teams-bot',
-  '/api/teams/bot',                         // Teams Bot webhook (HMAC-verified, no session auth)
+  '/api/webhooks/postmark/inbound',     // Postmark inbound webhook (HTTP Basic Auth + DKIM check)
+  '/api/webhooks/slack',                // Slack signature-verified webhook
+  '/api/webhooks/jira',                 // Jira shared-secret webhook (timingSafeEqual)
+  '/api/teams/bot',                     // Teams Bot webhook (Bot Framework JWT validated)
   '/api/auth',
   '/api/health',
   '/questionnaire',

@@ -2,6 +2,11 @@
  * Teams approval action handlers for evidence review.
  * Called by the bot route when it receives an invoke/submit activity
  * with action = 'approve_evidence' | 'reject_evidence'.
+ *
+ * SECURITY (C7): `orgId` is supplied by the bot route and MUST be the orgId
+ * resolved from the stored conversation reference — NEVER from the inbound
+ * Adaptive Card `value.orgId`. The lookup below enforces tenant isolation by
+ * requiring `evidence.organizationId === orgId` before any mutation.
  */
 import { db } from '@/lib/db'
 import { evidence } from '@/lib/db/schema/evidence'
@@ -14,6 +19,8 @@ import { createEvidenceResultCard } from '@/lib/teams/bot'
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function lookupEvidence(evidenceId: string, orgId: string) {
+  // The eq(evidence.organizationId, orgId) clause is load-bearing for C7.
+  // Removing it would let a Teams user in tenant A approve evidence in tenant B.
   const rows = await db
     .select()
     .from(evidence)

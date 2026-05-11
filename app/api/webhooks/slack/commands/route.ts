@@ -43,16 +43,31 @@ export async function POST(req: NextRequest) {
     response_url: params.get('response_url') ?? '',
   }
 
-  // Find the org whose Slack integration matches this team
-  // Look up all slack integrations and verify signature against each one.
+  // Scope the integration lookup to just this Slack team. Iterating ALL
+  // slack integrations and trying to verify against each one leaks timing /
+  // load info and lets a forged team_id-less request thrash the DB.
+  // We still verify the HMAC signature below — the team_id is only a hint.
+  if (!payload.team_id) {
+    return new NextResponse('Missing team_id', { status: 400 })
+  }
+
   const slackIntegrations = await db
     .select()
     .from(integrationsTable)
     .where(eq(integrationsTable.type, 'slack'))
 
+  // Filter to integrations whose stored config.teamId matches inbound team_id.
+  // We can't predicate on a jsonb path in the initial select without making
+  // the schema knowledge brittle, so we do the narrow filter in JS over the
+  // (typically small) slack-integration set.
   let orgId: string | null = null
-
   for (const integration of slackIntegrations) {
+    const cfg = (integration.config as Record<string, unknown> | null) ?? {}
+    const cfgTeamId = (cfg.teamId as string | undefined) ?? (cfg.team_id as string | undefined)
+    // If the integration has a stored teamId, require it to match. If it
+    // doesn't (legacy data), fall back to attempting signature verification.
+    if (cfgTeamId && cfgTeamId !== payload.team_id) continue
+
     const encCreds = integration.encryptedCredentials
     if (!encCreds) continue
 

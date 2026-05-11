@@ -15,9 +15,13 @@ import { eq, and } from 'drizzle-orm'
 import {
   createWelcomeCard,
   sendAdaptiveCard,
+  validateBotJwt,
+  assertAllowedServiceUrl,
+  isAllowedServiceUrl,
   type TeamsConversationRef,
   type AdaptiveCard,
 } from '@/lib/teams/bot'
+import { handleApproveEvidence, handleRejectEvidence } from '@/lib/teams/approvals'
 import {
   COMMANDS,
   handleComplianceCommand,
@@ -32,24 +36,18 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-// ─── Bot Framework token validation ──────────────────────────────────────────
+// ─── Bot Framework token validation (C6.5) ───────────────────────────────────
+//
+// Real JWT verification lives in lib/teams/bot.ts (validateBotJwt). It pulls
+// signing keys from https://login.botframework.com/v1/.well-known/keys, checks
+// iss === 'https://api.botframework.com', aud === BOT_APP_ID, and nbf/exp.
+//
+// In production both BOT_APP_ID and BOT_APP_PASSWORD must be set or we fail
+// closed. In non-production we allow only when NEXTAUTH_URL is http://localhost*.
 
-/**
- * Validate that the request carries a Bot Framework Bearer token.
- * In development (BOT_APP_PASSWORD not set), all requests are allowed through.
- * In production, we verify the Authorization header is a non-empty Bearer token.
- * Full JWT cryptographic validation would require calling the Bot Framework JWKS
- * endpoint — implement that if your security posture demands it.
- */
-async function validateBotSignature(req: NextRequest): Promise<boolean> {
-  const password = process.env.BOT_APP_PASSWORD
-  // Dev mode — skip validation
-  if (!password) return true
-
-  const authHeader = req.headers.get('authorization') ?? ''
-  if (!authHeader.startsWith('Bearer ')) return false
-  // Must be a non-trivially short token
-  return authHeader.length > 20
+async function validateBotSignature(req: NextRequest): Promise<{ ok: boolean; reason?: string }> {
+  const authHeader = req.headers.get('authorization')
+  return validateBotJwt(authHeader)
 }
 
 // ─── Activity helpers ─────────────────────────────────────────────────────────
@@ -278,49 +276,58 @@ async function handleInvokeAction(
   const action = value.action as string | undefined
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://your-domain.com'
 
+  // C7: orgId MUST come from the stored conversation ref. We deliberately
+  // ignore any value.orgId from the inbound activity — a malicious caller
+  // could otherwise pivot into another tenant's data.
   if (!orgId) return orgNotFoundCard()
 
   if (action === 'approve_evidence') {
     const evidenceId = value.evidenceId as string | undefined
-    const controlAssignmentId = value.controlAssignmentId as string | undefined
-
-    // Note: update evidence status via DB or API call here in a fuller implementation
-    // For now, return a confirmation card
+    if (!evidenceId) {
+      return {
+        type: 'AdaptiveCard',
+        version: '1.4',
+        body: [
+          { type: 'TextBlock', text: '⚠️ Missing Evidence ID', weight: 'Bolder', size: 'Medium', color: 'Warning' },
+        ],
+      }
+    }
+    // handleApproveEvidence performs the org-scoped row lookup itself; if the
+    // evidence row does not belong to `orgId` it returns ok:false.
+    const result = await handleApproveEvidence(evidenceId, orgId)
+    if (result.updatedCard) return result.updatedCard
     return {
       type: 'AdaptiveCard',
       version: '1.4',
       body: [
-        { type: 'TextBlock', text: '✅ Evidence Approved', weight: 'Bolder', size: 'Medium', color: 'Good' },
-        {
-          type: 'TextBlock',
-          text: `Evidence has been marked as approved.${evidenceId ? ` (ID: ${evidenceId})` : ''}`,
-          wrap: true,
-        },
+        { type: 'TextBlock', text: result.ok ? '✅ Approved' : '⚠️ Could not approve', weight: 'Bolder', size: 'Medium', color: result.ok ? 'Good' : 'Warning' },
+        { type: 'TextBlock', text: result.message, wrap: true },
       ],
       actions: [
-        { type: 'Action.OpenUrl', title: 'View Evidence', url: `${appUrl}/controls`, style: 'positive' },
+        { type: 'Action.OpenUrl', title: 'View Evidence', url: `${appUrl}/evidence`, style: 'positive' },
       ],
     }
   }
 
   if (action === 'reject_evidence') {
     const evidenceId = value.evidenceId as string | undefined
-    const reason = (value.reason as string) || 'No reason provided'
-
+    if (!evidenceId) {
+      return {
+        type: 'AdaptiveCard',
+        version: '1.4',
+        body: [
+          { type: 'TextBlock', text: '⚠️ Missing Evidence ID', weight: 'Bolder', size: 'Medium', color: 'Warning' },
+        ],
+      }
+    }
+    const result = await handleRejectEvidence(evidenceId, orgId)
+    if (result.updatedCard) return result.updatedCard
     return {
       type: 'AdaptiveCard',
       version: '1.4',
       body: [
-        { type: 'TextBlock', text: '❌ Evidence Rejected', weight: 'Bolder', size: 'Medium', color: 'Attention' },
-        {
-          type: 'TextBlock',
-          text: `Evidence has been rejected.${evidenceId ? ` (ID: ${evidenceId})` : ''}`,
-          wrap: true,
-        },
-        {
-          type: 'FactSet',
-          facts: [{ title: 'Reason', value: reason }],
-        },
+        { type: 'TextBlock', text: result.ok ? '❌ Rejected' : '⚠️ Could not reject', weight: 'Bolder', size: 'Medium', color: result.ok ? 'Attention' : 'Warning' },
+        { type: 'TextBlock', text: result.message, wrap: true },
       ],
       actions: [
         { type: 'Action.OpenUrl', title: 'View Controls', url: `${appUrl}/controls` },
@@ -371,10 +378,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read request body' }, { status: 400 })
     }
 
-    // Bot Framework signature validation
-    const isValid = await validateBotSignature(request)
-    if (!isValid) {
-      console.warn('[Teams Bot] Rejected request — invalid or missing Bearer token')
+    // Bot Framework signature validation (C6.5)
+    const auth = await validateBotSignature(request)
+    if (!auth.ok) {
+      console.warn('[Teams Bot] Rejected request:', auth.reason ?? 'invalid token')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -390,6 +397,14 @@ export async function POST(request: NextRequest) {
     const { conversationId, serviceUrl } = ref
 
     console.log(`[Teams Bot] Received activity type=${activityType} conv=${conversationId}`)
+
+    // C6: refuse any activity whose serviceUrl is not a Microsoft Bot Framework
+    // endpoint. This blocks an attacker who forges an inbound activity hoping
+    // sendAdaptiveCard / postActivityReply will POST our bearer token to them.
+    if (serviceUrl && !isAllowedServiceUrl(serviceUrl)) {
+      console.warn('[Teams Bot] Rejecting activity — serviceUrl not in allowlist:', serviceUrl)
+      return NextResponse.json({ error: 'Forbidden serviceUrl' }, { status: 400 })
+    }
 
     // ── conversationUpdate: bot added to conversation ──────────────────────────
     if (activityType === 'conversationUpdate') {
