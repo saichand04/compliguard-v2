@@ -263,6 +263,11 @@ export async function sendDailyDigest(
 /**
  * Verify Slack request signature (HMAC-SHA256).
  * See: https://api.slack.com/authentication/verifying-requests-from-slack
+ *
+ * - Rejects stale requests where X-Slack-Request-Timestamp is more than 5
+ *   minutes off from server time.
+ * - Uses Node's crypto.timingSafeEqual on equal-length hex buffers instead of
+ *   the prior hand-rolled char-XOR loop.
  */
 export async function verifySlackSignature(
   signingSecret: string,
@@ -271,9 +276,13 @@ export async function verifySlackSignature(
   rawBody: string,
 ): Promise<boolean> {
   try {
-    // Reject stale requests (> 5 minutes old)
+    // Reject blank/invalid timestamps and stale requests (> 5 minutes off).
+    const ts = parseInt(timestamp, 10)
+    if (!Number.isFinite(ts)) return false
     const now = Math.floor(Date.now() / 1000)
-    if (Math.abs(now - parseInt(timestamp, 10)) > 300) return false
+    if (Math.abs(now - ts) > 300) return false
+
+    if (!signature.startsWith('v0=')) return false
 
     const baseString = `v0:${timestamp}:${rawBody}`
 
@@ -293,15 +302,28 @@ export async function verifySlackSignature(
     const computedHex = Array.from(new Uint8Array(signatureBuffer))
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('')
-    const computedSig = `v0=${computedHex}`
 
-    // Constant-time comparison
-    if (computedSig.length !== signature.length) return false
-    let mismatch = 0
-    for (let i = 0; i < computedSig.length; i++) {
-      mismatch |= computedSig.charCodeAt(i) ^ signature.charCodeAt(i)
+    const providedHex = signature.slice('v0='.length).toLowerCase()
+    if (providedHex.length !== computedHex.length) return false
+
+    // Compare as hex-decoded Buffers via crypto.timingSafeEqual.
+    let computedBuf: Buffer
+    let providedBuf: Buffer
+    try {
+      computedBuf = Buffer.from(computedHex, 'hex')
+      providedBuf = Buffer.from(providedHex, 'hex')
+    } catch {
+      return false
     }
-    return mismatch === 0
+    if (computedBuf.length !== providedBuf.length) return false
+
+    // Lazily require Node crypto to avoid bundling issues on edge runtimes.
+    const nodeCrypto = await import('crypto')
+    try {
+      return nodeCrypto.timingSafeEqual(computedBuf, providedBuf)
+    } catch {
+      return false
+    }
   } catch {
     return false
   }

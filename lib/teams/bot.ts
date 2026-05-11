@@ -5,6 +5,141 @@
 import { db } from '@/lib/db'
 import { teamsConversationRefs } from '@/lib/db/schema/teams_bot'
 import { eq, and, lt, sql } from 'drizzle-orm'
+import { createRemoteJWKSet, jwtVerify } from 'jose'
+
+// ─── serviceUrl allowlist (C6) ───────────────────────────────────────────────
+//
+// Bot Framework always delivers requests with serviceUrl pointing at a
+// Microsoft-controlled Bot Framework REST endpoint. Anything else is either
+// misrouted or an attacker-controlled URL planted via a forged activity.
+//
+// Static allowlist: exact hostnames Microsoft publishes for global + GCC.
+// Wildcards: per-region traffic-manager nodes and api.botframework.com regional
+// children all live under botframework.com / trafficmanager.net.
+const SERVICE_URL_HOST_ALLOWLIST = new Set<string>([
+  'smba.trafficmanager.net',
+  'api.botframework.com',
+  // GovCloud equivalents
+  'smba.infra.gov.teams.microsoft.us',
+  'api.botframework.us',
+])
+
+const SERVICE_URL_HOST_SUFFIX_ALLOWLIST = [
+  '.botframework.com',
+  '.botframework.us',
+  '.trafficmanager.net',
+]
+
+/**
+ * Validate that a Bot Framework serviceUrl points at a Microsoft-controlled
+ * endpoint. Returns the URL object if allowed, throws otherwise.
+ *
+ * Must be called BEFORE any outbound fetch built from a stored or inbound
+ * conversation reference.
+ */
+export function assertAllowedServiceUrl(serviceUrl: string): URL {
+  let url: URL
+  try {
+    url = new URL(serviceUrl)
+  } catch {
+    throw new Error(`[Teams Bot] Invalid serviceUrl: ${serviceUrl}`)
+  }
+  if (url.protocol !== 'https:') {
+    throw new Error(`[Teams Bot] serviceUrl must be https: ${serviceUrl}`)
+  }
+  const host = url.hostname.toLowerCase()
+  if (SERVICE_URL_HOST_ALLOWLIST.has(host)) return url
+  if (SERVICE_URL_HOST_SUFFIX_ALLOWLIST.some((s) => host.endsWith(s))) return url
+  throw new Error(`[Teams Bot] serviceUrl host not in allowlist: ${host}`)
+}
+
+export function isAllowedServiceUrl(serviceUrl: string): boolean {
+  try {
+    assertAllowedServiceUrl(serviceUrl)
+    return true
+  } catch {
+    return false
+  }
+}
+
+// ─── Bot Framework JWT validation (C6.5) ─────────────────────────────────────
+//
+// Bot Framework signs requests with a JWT in `Authorization: Bearer …` using
+// keys published at https://login.botframework.com/v1/.well-known/keys.
+// We cache the JWKS at module scope (jose handles HTTP-level caching).
+
+const BOT_FRAMEWORK_ISSUER = 'https://api.botframework.com'
+const BOT_FRAMEWORK_JWKS_URL = 'https://login.botframework.com/v1/.well-known/keys'
+
+let cachedJwks: ReturnType<typeof createRemoteJWKSet> | null = null
+function getBotFrameworkJwks() {
+  if (!cachedJwks) {
+    cachedJwks = createRemoteJWKSet(new URL(BOT_FRAMEWORK_JWKS_URL), {
+      // jose caches keys & honors cache-control; we just keep one JWKS set alive
+      cacheMaxAge: 24 * 60 * 60 * 1000, // 24h
+      cooldownDuration: 60_000,
+    })
+  }
+  return cachedJwks
+}
+
+export interface BotJwtValidationResult {
+  ok: boolean
+  reason?: string
+}
+
+/**
+ * Validate a Bot Framework Authorization header.
+ *
+ * In production:
+ *   - BOT_APP_ID and BOT_APP_PASSWORD MUST be set; otherwise fail closed.
+ *   - JWT must be signed by JWKS at BOT_FRAMEWORK_JWKS_URL.
+ *   - iss must be https://api.botframework.com
+ *   - aud must equal BOT_APP_ID
+ *   - nbf/exp must be valid.
+ *
+ * In non-production:
+ *   - If BOT_APP_PASSWORD is unset, allow only if NEXTAUTH_URL is http://localhost*
+ *     (i.e. local dev). Otherwise still require a valid JWT.
+ */
+export async function validateBotJwt(
+  authHeader: string | null | undefined,
+): Promise<BotJwtValidationResult> {
+  const isProd = process.env.NODE_ENV === 'production'
+  const appId = process.env.BOT_APP_ID
+  const appPassword = process.env.BOT_APP_PASSWORD
+
+  if (!appId || !appPassword) {
+    if (isProd) {
+      return { ok: false, reason: 'BOT_APP_ID/BOT_APP_PASSWORD not configured' }
+    }
+    const nextAuthUrl = process.env.NEXTAUTH_URL ?? ''
+    if (nextAuthUrl.startsWith('http://localhost')) {
+      // Local dev bypass — allow request through without JWT validation.
+      return { ok: true }
+    }
+    return { ok: false, reason: 'BOT credentials not configured outside localhost dev' }
+  }
+
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return { ok: false, reason: 'Missing or malformed Authorization header' }
+  }
+  const token = authHeader.slice('Bearer '.length).trim()
+  if (!token) return { ok: false, reason: 'Empty bearer token' }
+
+  try {
+    const jwks = getBotFrameworkJwks()
+    await jwtVerify(token, jwks, {
+      issuer: BOT_FRAMEWORK_ISSUER,
+      audience: appId,
+      // jose will enforce nbf/exp automatically; allow small clock skew.
+      clockTolerance: 300,
+    })
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, reason: `JWT verification failed: ${(err as Error).message}` }
+  }
+}
 
 export interface TeamsConversationRef {
   serviceUrl: string
@@ -83,6 +218,8 @@ export async function sendProactiveMessage(
   ref: TeamsConversationRef,
   message: string
 ): Promise<void> {
+  // C6: refuse outbound to non-Microsoft service URLs.
+  assertAllowedServiceUrl(ref.serviceUrl)
   const token = await getBotToken(ref.tenantId)
   const url = `${ref.serviceUrl.replace(/\/$/, '')}/v3/conversations/${encodeURIComponent(ref.conversationId)}/activities`
 
@@ -113,6 +250,8 @@ export async function sendAdaptiveCard(
   ref: TeamsConversationRef,
   card: AdaptiveCard
 ): Promise<void> {
+  // C6: refuse outbound to non-Microsoft service URLs.
+  assertAllowedServiceUrl(ref.serviceUrl)
   const token = await getBotToken(ref.tenantId)
   const url = `${ref.serviceUrl.replace(/\/$/, '')}/v3/conversations/${encodeURIComponent(ref.conversationId)}/activities`
 
@@ -649,6 +788,14 @@ export async function saveConversationRef(activity: TeamsActivity, orgId: string
   const botId = process.env.BOT_APP_ID ?? ''
 
   if (!conversationId || !serviceUrl) return
+
+  // C6: refuse to persist a conversation ref with an attacker-controlled
+  // serviceUrl. We never want sendAdaptiveCard to be tricked into POSTing
+  // bot tokens to e.g. attacker.example.com.
+  if (!isAllowedServiceUrl(serviceUrl)) {
+    console.warn('[Teams Bot] Rejecting saveConversationRef — serviceUrl not in allowlist:', serviceUrl)
+    return
+  }
 
   const conversationRef = { conversationId, botId, tenantId }
 

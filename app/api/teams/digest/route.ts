@@ -2,13 +2,32 @@
  * Teams Daily Digest API — Phase 7.7
  * POST: send digest now (session auth or cronSecret)
  * GET:  return digest schedule settings
+ *
+ * Authentication contract for POST:
+ *   - If `x-cron-secret` header OR `cronSecret` body field is present, it is
+ *     compared to `process.env.CRON_SECRET` with `crypto.timingSafeEqual`.
+ *     On match, the caller may pass `orgId` in the body and the session check
+ *     is skipped. If `CRON_SECRET` is unset the cron path is disabled.
+ *   - Otherwise the caller must have an authenticated session.
  */
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema/system_settings'
 import { sendDailyDigest } from '@/lib/teams/digest'
 import { sql } from 'drizzle-orm'
+
+function timingSafeEqualStrings(a: string, b: string): boolean {
+  const ab = Buffer.from(a, 'utf8')
+  const bb = Buffer.from(b, 'utf8')
+  if (ab.length !== bb.length) return false
+  try {
+    return crypto.timingSafeEqual(ab, bb)
+  } catch {
+    return false
+  }
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -74,8 +93,11 @@ export async function POST(request: NextRequest) {
   const cronSecret = cronSecretHeader ?? body.cronSecret
 
   if (cronSecret) {
-    // cronSecret path — skip session auth, verify secret
-    if (!envCronSecret || cronSecret !== envCronSecret) {
+    // cronSecret path — skip session auth, verify secret with timingSafeEqual.
+    if (!envCronSecret) {
+      return NextResponse.json({ error: 'Cron auth disabled (CRON_SECRET unset)' }, { status: 401 })
+    }
+    if (!timingSafeEqualStrings(cronSecret, envCronSecret)) {
       return NextResponse.json({ error: 'Invalid cron secret' }, { status: 401 })
     }
     orgId = body.orgId ?? null

@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import { db } from '@/lib/db'
 import { webhooks, webhookDeliveries } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
+import { safeFetch, assertPublicUrl, stripCredentials, SsrfBlockedError } from '@/lib/security/ssrf-guard'
 
 export type WebhookEvent =
   | 'finding.created'
@@ -41,7 +42,14 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Deliver a webhook payload to a single endpoint with retry.
- * Returns the delivery result.
+ *
+ * SECURITY (H3):
+ *  - Refuses to dispatch if `secret` is null (webhook creation MUST set one).
+ *  - Validates the destination URL via the shared SSRF guard before each
+ *    fetch (blocks RFC1918, loopback, link-local, cloud metadata, etc.).
+ *  - Does NOT persist the response body to webhook_deliveries.responseBody —
+ *    we keep only the HTTP status, length, and a tiny truncated preview.
+ *  - Always strips credentials from the URL before storing or logging.
  */
 async function deliverWithRetry(
   url: string,
@@ -51,28 +59,57 @@ async function deliverWithRetry(
   webhookId: string,
   orgId: string
 ): Promise<void> {
+  // H3: refuse to send if no secret is configured. Webhooks without signing
+  // secrets are an exfil channel waiting to happen.
+  if (!secret) {
+    await db.insert(webhookDeliveries).values({
+      webhookId,
+      eventType: event,
+      payload: payload as Record<string, unknown>,
+      status: 'failed',
+      responseStatus: 'no_secret',
+      responseBody: 'Refused: webhook has no signing secret configured.',
+      attempts: '0',
+    })
+    return
+  }
+
+  // H3: pre-validate URL before any I/O. Strip creds from anything we log.
+  const sanitizedUrl = stripCredentials(url)
+  try {
+    await assertPublicUrl(url)
+  } catch (err) {
+    const reason = err instanceof SsrfBlockedError ? err.message : 'invalid url'
+    console.warn(`[Webhook dispatch] Blocked outbound to ${sanitizedUrl}: ${reason}`)
+    await db.insert(webhookDeliveries).values({
+      webhookId,
+      eventType: event,
+      payload: payload as Record<string, unknown>,
+      status: 'failed',
+      responseStatus: 'blocked',
+      responseBody: `Blocked by SSRF guard: ${reason}`.slice(0, 256),
+      attempts: '0',
+    })
+    return
+  }
+
   const body = JSON.stringify(payload)
   const maxAttempts = 3
 
   let lastResponseStatus: string | null = null
-  let lastResponseBody: string | null = null
+  let lastResponseSummary: string | null = null
   let delivered = false
-  const startTime = Date.now()
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const attemptStart = Date.now()
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'X-CompliGuard-Event': event,
         'User-Agent': 'CompliGuard-Webhooks/1.0',
+        'X-CompliGuard-Signature': signPayload(secret, body),
       }
 
-      if (secret) {
-        headers['X-CompliGuard-Signature'] = signPayload(secret, body)
-      }
-
-      const response = await fetch(url, {
+      const response = await safeFetch(url, {
         method: 'POST',
         headers,
         body,
@@ -80,24 +117,27 @@ async function deliverWithRetry(
       })
 
       lastResponseStatus = String(response.status)
-      lastResponseBody = await response.text().catch(() => '')
-      const duration = Date.now() - attemptStart
+
+      // Read at most 256 bytes of the response so a malicious endpoint can't
+      // bloat our deliveries table. We don't keep the body in full.
+      const previewText = await response.text().catch(() => '')
+      const truncated = previewText.slice(0, 256)
+      lastResponseSummary = `len=${previewText.length} preview=${truncated.replace(/\s+/g, ' ')}`
 
       if (response.ok) {
         delivered = true
-        // Record successful delivery
         await db.insert(webhookDeliveries).values({
           webhookId,
           eventType: event,
           payload: payload as Record<string, unknown>,
           status: 'delivered',
           responseStatus: lastResponseStatus,
-          responseBody: lastResponseBody?.slice(0, 4000) ?? null,
+          // Persist only the truncated, metadata-style summary — NOT the full body.
+          responseBody: lastResponseSummary.slice(0, 256),
           attempts: String(attempt),
           deliveredAt: new Date(),
         })
 
-        // Update webhook lastDeliveryAt and lastSuccessAt
         await db.update(webhooks)
           .set({
             lastDeliveryAt: new Date(),
@@ -109,42 +149,46 @@ async function deliverWithRetry(
 
         return
       }
-
-      // Non-2xx response — will retry
-    } catch {
+      // Non-2xx → retry
+    } catch (err) {
+      // SSRF block in the middle of the loop should not be retried.
+      if (err instanceof SsrfBlockedError) {
+        lastResponseStatus = 'blocked'
+        lastResponseSummary = `Blocked: ${err.message}`
+        break
+      }
       lastResponseStatus = 'error'
-      lastResponseBody = 'Connection failed or timeout'
+      lastResponseSummary = 'Connection failed or timeout'
     }
 
     if (attempt < maxAttempts) {
-      // Exponential backoff: 1s, 2s
       await sleep(Math.pow(2, attempt - 1) * 1000)
     }
   }
 
   // All attempts failed
-  const duration = Date.now() - startTime
-  await db.insert(webhookDeliveries).values({
-    webhookId,
-    eventType: event,
-    payload: payload as Record<string, unknown>,
-    status: 'failed',
-    responseStatus: lastResponseStatus,
-    responseBody: lastResponseBody?.slice(0, 4000) ?? null,
-    attempts: String(maxAttempts),
-  })
+  if (!delivered) {
+    await db.insert(webhookDeliveries).values({
+      webhookId,
+      eventType: event,
+      payload: payload as Record<string, unknown>,
+      status: 'failed',
+      responseStatus: lastResponseStatus,
+      responseBody: lastResponseSummary?.slice(0, 256) ?? null,
+      attempts: String(maxAttempts),
+    })
 
-  // Increment consecutive failures and potentially mark webhook as failing
-  const [webhook] = await db.select().from(webhooks).where(eq(webhooks.id, webhookId)).limit(1)
-  if (webhook) {
-    const failures = parseInt(webhook.consecutiveFailures ?? '0') + 1
-    await db.update(webhooks)
-      .set({
-        consecutiveFailures: String(failures),
-        lastDeliveryAt: new Date(),
-        status: failures >= 3 ? 'failing' : webhook.status,
-      })
-      .where(eq(webhooks.id, webhookId))
+    const [webhook] = await db.select().from(webhooks).where(eq(webhooks.id, webhookId)).limit(1)
+    if (webhook) {
+      const failures = parseInt(webhook.consecutiveFailures ?? '0') + 1
+      await db.update(webhooks)
+        .set({
+          consecutiveFailures: String(failures),
+          lastDeliveryAt: new Date(),
+          status: failures >= 3 ? 'failing' : webhook.status,
+        })
+        .where(eq(webhooks.id, webhookId))
+    }
   }
 }
 
