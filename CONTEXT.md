@@ -1048,5 +1048,226 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 | 5 | ✅ Complete | Platform Completeness |
 | 6 | ✅ Complete | OpenClaw MCP Server |
 | 7 | ✅ Complete | Microsoft Teams Bot |
+| 8 | ✅ Complete | Security Hardening (2026-05-11) — full audit + remediation |
 | **Next** | 🔜 Pending | Feature development phase TBD |
+
+---
+
+## PHASE 8 — SECURITY HARDENING (2026-05-11)
+
+**Status:** ✅ COMPLETE
+**Audit doc:** [`securitycheck.md`](./securitycheck.md) — full findings + remediation status
+**Commit range:** `6916f12..05dcd86` (13 commits, 99 files, +5,873 / -1,295 LOC)
+
+A multi-agent static security audit identified **16 Critical, 23 High, 17 Medium, 11 Low** findings + **6 dependency CVEs**. All 16 Critical and 22 of 23 High items were remediated in this phase. Six parallel agents working on isolated git worktrees produced a clean merge with all 100 unit tests passing, production build successful, and homelab login + dashboard verified working post-deploy.
+
+### 8.1 What the Audit Found (Top-line)
+
+The platform stored customer cloud credentials in a DB protected by an encryption key that **fell back to a hardcoded string** when env-loading failed. An **unauthenticated** `/api/setup/step/3` endpoint allowed any anonymous remote attacker to create `super_admin` accounts on a deployed instance. Every self-service signup minted an `admin` role with **no email verification, no rate limit**. The MCP NL-Query agent could be tricked (via prompt injection or direct request) into calling mutating tools (`create_finding`, `update_task_status`) **without RBAC check**. Webhook signature verification was either implemented with the **wrong primitive** (Postmark inbound used HMAC; the actual mechanism is HTTP Basic Auth) or **fail-open** (Jira webhook bypassable by omitting the `Authorization` header).
+
+### 8.2 Code Changes by Area
+
+#### 8.2.1 Auth, Setup, JWT, Encryption (Agent A1 — commit `9d81ae9`)
+
+**New / changed files:**
+- `lib/auth/jwt.ts` — `SessionPayload` now includes `tokenVersion`; `getSecret()` throws on missing / `<32` chars / placeholder; `verifyToken()` does an optional DB lookup against `users.token_version` and `users.is_active` for **real session revocation** (edge-runtime-safe with try/catch fallback); `clearSessionCookie()` uses `NEXTAUTH_URL.startsWith('https://')` (consistent with login).
+- `lib/encryption.ts` — prefers `process.env.ENCRYPTION_KEY` (new), falls back to `NEXTAUTH_SECRET`; throws on missing / short / placeholder. Derives AES-256-GCM key via `crypto.hkdfSync('sha256', secret, 'compliguard-encryption-v1', 'aes-256-gcm', 32)`. No more hardcoded fallback key.
+- `proxy.ts` — `jwtVerify(token, ..., { issuer: 'compliguard' })` (was issuer-agnostic; storage tokens could pass as sessions).
+- `app/api/auth/login/route.ts` — embeds `tokenVersion` from DB in issued JWT.
+- `app/api/auth/logout/route.ts` — bumps `users.token_version` in DB; uses correct `secure` flag.
+- `app/api/auth/session/route.ts` — DELETE uses correct `secure` flag.
+- `app/api/auth/signup/route.ts` — role defaults to `'user'`; requires `setupCompleted && allowRegistrations`; `authLimiter` rate limit; duplicate email returns generic 202; new users land with `is_active=false` (admin activation flow; full email verification deferred).
+- `app/api/auth/forgot-password/route.ts` — removed `console.log`; 32-byte hex token with 1h expiry into dedicated columns; always returns `{ok:true}`.
+- `app/api/auth/reset-password/route.ts` (**NEW**) — single-use token nulled atomically; ≥12-char password policy; bcrypt; bumps `tokenVersion`.
+- `app/api/users/[id]/role/route.ts` — blocks self-edit, only `super_admin` may assign `super_admin`, admins capped to `compliance_manager|auditor|user`, refuses second active super_admin in org.
+- `app/api/setup/**` — every step handler checks `systemSettings.setupCompleted`; returns 403 unless caller is `super_admin`.
+- `app/api/setup/test-ai/route.ts` + `test-storage/route.ts` — `requireAuth` + `super_admin` gated; provider clients constructed in-scope from request body; **no more `process.env` mutation**.
+
+**Schema:**
+- `lib/db/schema/users.ts` — added `tokenVersion`, `passwordResetToken`, `passwordResetExpiresAt`.
+- `drizzle/migrations/0001_add_token_version_and_password_reset.sql` (**NEW**)
+
+**Breaking change for downstream code:** JWT payload shape changed from `{sub, role, orgId, ...}` to `{userId, email, role, orgId, firstName, lastName, tokenVersion}`. Any caller of `signToken()` or consumer of `SessionPayload` needs to use the new field names. `tests/unit/jwt.test.ts` updated accordingly (`05dcd86`).
+
+#### 8.2.2 Webhooks, Teams Bot, Outbound Dispatcher, SSRF Guard (Agent A2 — commit `bae26f6`)
+
+**New / changed files:**
+- `lib/security/ssrf-guard.ts` (**NEW**) — shared SSRF defense. Exports:
+  - `assertPublicUrl(url, opts?)` — rejects RFC1918, loopback, link-local (`169.254/16`, `fe80::/10`), IPv6 ULA (`fc00::/7`), CGNAT (`100.64/10`), benchmark (`198.18/15`), cloud metadata (`169.254.169.254`, `fd00:ec2::254`, `metadata.google.internal`, `metadata.azure.com`).
+  - `safeFetch(url, init)` — guarded fetch wrapper; re-resolves DNS to defeat rebinding.
+  - `stripCredentials(url)` — for log sanitization.
+  - `SsrfBlockedError`.
+- `lib/teams/bot.ts` — `validateBotJwt` using `jose` `createRemoteJWKSet` against `login.botframework.com`; enforces `iss`, `aud`, `nbf`, `exp`. Fail-closed in production if env unset; localhost dev bypass. `assertAllowedServiceUrl` allowlists `smba.trafficmanager.net` and `*.botframework.com`. Called inside `sendAdaptiveCard`, `sendProactiveMessage`, `saveConversationRef`.
+- `app/api/teams/bot/route.ts` — uses `validateBotJwt`; rejects activity if `serviceUrl` is off-allowlist; invoke handler resolves `orgId` from stored `teamsConversationRefs` row (NOT from card payload).
+- `lib/teams/approvals.ts` — documented org-scoped lookup contract.
+- `app/api/webhooks/postmark/inbound/route.ts` — replaced HMAC with HTTP Basic Auth (`POSTMARK_INBOUND_USER` / `POSTMARK_INBOUND_PASS`); production fail-closed; DKIM-pass check on email Headers; non-DKIM uploads inserted under `inbound-unverified@compliguard.local` and notify org admins.
+- `app/api/webhooks/jira/route.ts` — Authorization required up-front; `webhookEvent` allowlist; `timingSafeEqual` with length precheck; decryption failure → 500 fail-closed; auth before DB scan.
+- `lib/integrations/slack.ts` — `crypto.timingSafeEqual` on hex-decoded buffers (was hand-rolled char-XOR); `v0=` prefix + numeric timestamp guard.
+- `app/api/webhooks/slack/commands/route.ts` — requires `team_id`; filters integrations by stored `config.teamId` before HMAC verification.
+- `lib/webhooks/dispatcher.ts` — uses `safeFetch`; refuses webhooks with null secret; persists only HTTP status + 256-byte response preview (never full body); strips URL credentials in logs.
+- `proxy.ts` — removed dead `/api/teams-bot` and `/api/inbound-email` from `PUBLIC_PATHS`.
+- `app/api/teams/check-overdue/route.ts` — `x-cron-secret` via `timingSafeEqual` against `CRON_SECRET`; session path retained for admin/super_admin.
+
+#### 8.2.3 IDOR, Cross-Org Writes, Mass Assignment, Audit Logging (Agent A3 — commit `a4ec47e`)
+
+**New / changed files:**
+- `lib/audit/log.ts` (**NEW**) — `logAudit({...})` helper for destructive ops; wraps existing `writeAuditLog`.
+- `lib/db/schema/organizations.ts` — added `trust_public boolean NOT NULL DEFAULT false`.
+- `drizzle/migrations/0002_add_trust_public.sql` (**NEW**)
+- `app/api/comments/route.ts` — entity-validator helper checks parent entity in caller's org; all queries scoped with `organizationId = session.orgId`; UUID validation; audit log on hard delete.
+- `app/api/knowledge/{route,[id]/route}.ts` — visibility = public OR same-org; `isPublic` flag gated to `super_admin`; FK forced; UUID validation; audit log on delete.
+- `app/api/roles/{route,[id]/route}.ts` — `super_admin` only for POST/PATCH/DELETE; UPDATE scoped to row id; TODO comment for per-org migration; audit log on delete.
+- `app/api/email/{settings,test}/route.ts` — `super_admin` only; UPDATE scoped; sanitized error responses.
+- `app/api/notifications/route.ts` — Zod strict schemas; POST forces `organizationId` from session and validates `userId` belongs to that org.
+- `app/api/frameworks/[id]/{route,publish,rollback,controls/[cid]}/route.ts` — `super_admin` only; refuse `isBuiltIn`; UUID validation; audit log before delete. TODO(security): scope frameworks per-org (schema missing column).
+- `app/api/mappings/suggestions/[id]/route.ts` — validates suggestion's `sourceControlId` is visible to caller's org (built-in framework OR active org assignment).
+- `app/api/v1/*/route.ts` (+ `[id]`) — strict Zod schemas (reject unknown keys); `organizationId` forced from API key; FK references (`controlAssignmentId`, `assignedTo`) verified to belong to the key's org; filters pushed into SQL `limit/offset/count(*)` instead of fetching 1000 rows + JS-filter; UUID path validation; error sanitization.
+- `app/api/trust/[orgSlug]/route.ts` — refuses unless `org.trustPublic === true`; returns 404 (no existence-leak).
+- `app/api/reports/audit-trail/route.ts` — `VIEW_AUDIT_LOGS` required.
+- `app/api/audit/export-zip/route.ts` — `GENERATE_REPORTS` required.
+- `app/api/audit/controls/route.ts` — `VIEW_AUDIT_LOGS` required.
+- `app/api/soa/route.ts` — Zod strict; validates `controlId` belongs to active org-framework.
+- `app/api/audit-logs/route.ts` — proper SQL `limit/offset/count(*)` with filters pushed into WHERE.
+
+#### 8.2.4 Storage, Uploads, MIME, xlsx → exceljs Migration (Agent A4 — commit `f98b6d4`)
+
+**New / changed files:**
+- `lib/security/file-validator.ts` (**NEW**) — `assertSafeStorageKey`, `sanitizeFilename`, `sniffMime` (via `file-type` package), `assertAllowedFile`, `pickServeMime`, `isActiveContentMime`, `FileValidationError`.
+- `app/api/storage/local/[...key]/route.ts` (**C15 fix**) — `path.resolve` both sides; `resolved.startsWith(safeBase + path.sep)` (with separator); `fs.realpath` re-check defeats symlinks; content-sniff MIME; refuses SVG/HTML/XML; `Content-Disposition: attachment` + strict CSP + `X-Content-Type-Options: nosniff` + `X-Frame-Options: DENY` + `Referrer-Policy: no-referrer`.
+- `app/api/evidence/[id]/download/route.ts` — same hardening for `/tmp/evidence-uploads`.
+- `app/api/evidence/upload/route.ts` — sniff MIME via `assertAllowedFile`; sanitize filename; store sniffed MIME (not browser-supplied `file.type`).
+- `app/api/evidence-requests/[token]/route.ts` — sniff MIME; sanitize filename; per-IP rate limit (`authLimiter` key `ev-req-${ip}`); `requestId` trace log.
+- `lib/email/inbound.ts` — `validateAttachment` now async + content-sniffs MIME instead of trusting `ContentType`.
+- `app/api/frameworks/upload/route.ts` — **migrated from `xlsx` to `exceljs`** (xlsx CVEs: prototype pollution + ReDoS, no upstream fix); 10 MB cap; `Object.freeze(Object.prototype)` at module load.
+- All `lib/storage/providers/*.ts` (+ legacy `lib/storage/{local,s3,azure-blob,onedrive}.ts`) — `assertSafeStorageKey` on every key-taking method, including `list()` with non-empty prefix.
+- `lib/storage/providers/azure-blob.ts` (+ legacy) — SAS TTL hard-capped at 15min; `signedProtocol=https`; optional `clientIp` → `signedIP/sip` pin.
+- `lib/storage/providers/onedrive.ts` (+ legacy) — `scope: 'organization'` (no more anonymous); TTL ≤10min; falls back to storage key for authenticated proxy when tenant rejects org-scope sharing.
+- `package.json` — removed `xlsx`; added `exceljs@^4.4.0` + `file-type@^19.6.0`.
+- `tests/unit/file-validator.test.ts` (**NEW**) — 23 cases (traversal/sanitize/sniff/allowlist).
+
+#### 8.2.5 MCP RBAC, Real Rate Limit, Pentest/NL-Tests SSRF (Agent A5 — commit `2e4fbe4`)
+
+**Changed files:**
+- `lib/mcp/auth.ts` — replaced fixed-window mock-sliding rate limit with a real sliding deque keyed by API key id; `enforceMcpRateLimit(keyId, scope)`; periodic cleanup; `RateLimitError`.
+- `app/api/mcp/route.ts` — wires `enforceMcpRateLimit` per tool dispatch; returns 429 with `Retry-After`; per-IP brute-force lockout on invalid API-key auth via `authLimiter`.
+- `lib/mcp/nl-query.ts` (**C14 fix**) — `NLQueryScopes` type; **filtered tool catalog** (write tools removed from LLM context when caller lacks RBAC); `dispatchToolWithGuards` re-checks scopes + 30s per-call timeout; tool outputs wrapped `<<TOOL_OUTPUT_START id=... untrusted=true>> ... <<TOOL_OUTPUT_END>>` with system-prompt instructions to treat outputs as untrusted; `MAX_TOOL_CALLS=3`.
+- `app/api/mcp/nl-query/route.ts` — derives `NLQueryScopes` from RBAC (session) or MCP scopes (API key); passes to `executeNLQuery`.
+- `lib/mcp/tools.ts` — documented that all DB queries filter by auth-context `orgId`; tightened `get_control_status`, `get_compliance_score`, `search_controls` to refuse frameworks/controls the org hasn't activated.
+- `app/api/pentest/sessions/route.ts` (**C16 fix**) — DNS resolution + private/link-local/metadata IP rejection; TXT-record domain ownership proof (`_compliguard.<host>` = `compliguard-pentest=<orgId>`); `super_admin` gate for IP targets; 1 pentest per target per 1h; uses `assertPublicUrl` from `lib/security/ssrf-guard`.
+- `lib/pentest/engine.ts` — `assertSafePentestTarget` re-resolves DNS at each call (defeats rebinding); all HTTP probes routed through `pentestFetch` → `safeFetch`.
+- `lib/integrations/nl-tests.ts` — `assertSafeHost` + `safeFetch` on every check; port scan refuses private/metadata IPs and limits to allowlist (22/80/443/3389/5432/6379/25/587/110/143); AI custom check re-validates hostname.
+- `app/api/integrations/nl-tests/run-all/route.ts` + `[id]/run/route.ts` — bounded concurrency (inline `makeLimiter(5)`) + 200-runs/24h per-org quota.
+
+#### 8.2.6 Build, Deps, Logger, Headers (Agent A6 — commit `ec4cb80`)
+
+**Changed files:**
+- `lib/logger.ts` — pino `redact` config covering passwords, API keys, OAuth tokens, encrypted credentials, secrets, `Authorization`/`Cookie`/`Set-Cookie` headers. Censor: `[REDACTED]`.
+- `next.config.mjs` — global security headers via `async headers()`: HSTS (2y + preload), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` (camera/mic/geo disabled), `Content-Security-Policy` (note: `script-src 'unsafe-inline'` retained as a known regression — Next.js 16 hydration requires it; remediation needs nonce-based middleware).
+- `docker-compose.yml` — removed default passwords (all `${VAR:-default}` replaced with `${VAR:?... must be set}` fail-on-unset); removed host port exposure for `postgres` + `redis`; per-service memory limits; app gets `read_only: true` filesystem + tmpfs `/tmp` (128 MB).
+- `Dockerfile` — build-time secrets gated behind `ARG`s with placeholder `DO_NOT_USE_AT_RUNTIME_REPLACE_VIA_ENV`; `RUN npm audit --omit=dev --audit-level=high || true` surfaces CVEs in CI build logs; CMD switched to new `docker-entrypoint.sh`.
+- `scripts/docker-entrypoint.sh` (**NEW**) — refuses to start if `NEXTAUTH_SECRET` or `JWT_SECRET` is unset, equals placeholder, or is `<32` chars; then `exec node server.js`.
+- `scripts/deploy.sh` — `is_weak_secret` + `require_strong_secret` helpers; min lengths for `JWT_SECRET`/`NEXTAUTH_SECRET` (32) and `POSTGRES_PASSWORD`/`MINIO_PASSWORD` (16); final gate in `write_env_file` aborts on weak values.
+- `scripts/install.sh` — TLS-pinned curl pipes (`--proto '=https' --tlsv1.2`) for NodeSource, PostgreSQL keyring, get.docker.com.
+- `.env.example` — replaced cargo-cult placeholders with `__GENERATE_VIA_DEPLOY_SCRIPT__` + header pointing users to `scripts/deploy.sh`.
+
+### 8.3 New Environment Variables
+
+Operators upgrading existing deployments need to set:
+
+| Var | Used by | Required when |
+|-----|---------|---------------|
+| `ENCRYPTION_KEY` | `lib/encryption.ts` | Optional; falls back to `NEXTAUTH_SECRET`. Recommended for proper key separation. |
+| `BOT_APP_ID` | `lib/teams/bot.ts` | If Teams Bot is in use (else dev-only validation). |
+| `BOT_APP_PASSWORD` | `lib/teams/bot.ts` | If Teams Bot is in use. Production fail-closed if unset. |
+| `POSTMARK_INBOUND_USER` + `POSTMARK_INBOUND_PASS` | `app/api/webhooks/postmark/inbound/route.ts` | If Postmark inbound is in use. Production fail-closed if unset. |
+| `CRON_SECRET` | `app/api/teams/check-overdue/route.ts` etc. | If using `x-cron-secret` header path (else session admin/super_admin works). |
+| `MINIO_ROOT_PASSWORD` | `docker-compose.yml` | **REQUIRED** at compose-time even in minimal mode (compose parses all services). |
+
+Existing `JWT_SECRET`, `NEXTAUTH_SECRET`, `POSTGRES_PASSWORD` are still required, but now enforced at compose parse-time and asserted at app startup.
+
+### 8.4 New / Changed Migrations
+
+| Migration | Adds | Applied to homelab |
+|-----------|------|--------------------|
+| `0001_add_token_version_and_password_reset.sql` | `users.token_version int NOT NULL DEFAULT 1`, `users.password_reset_token text`, `users.password_reset_expires_at timestamptz` | ✅ Yes |
+| `0002_add_trust_public.sql` | `organizations.trust_public boolean NOT NULL DEFAULT false` | ✅ Yes |
+
+### 8.5 New Shared Helpers (re-use these in future code)
+
+- `lib/security/ssrf-guard.ts` — `assertPublicUrl(url)`, `safeFetch(url, init)`, `stripCredentials(url)`. Use for ANY outbound URL that comes from user input or DB state.
+- `lib/security/file-validator.ts` — `assertSafeStorageKey(key)`, `sanitizeFilename(name)`, `sniffMime(buffer)`, `assertAllowedFile(buffer, declaredMime, allowlist)`, `pickServeMime`, `isActiveContentMime`. Use for ANY file upload or storage-key handling.
+- `lib/audit/log.ts` — `logAudit({...})` thin wrapper around `writeAuditLog`. Use for destructive ops (DELETE handlers).
+
+### 8.6 Breaking Changes for Downstream Code
+
+1. **JWT payload shape** changed: `{userId, email, role, orgId, firstName, lastName, tokenVersion}` (was `{sub, role, orgId, ...}`). Update callers of `signToken()` / `SessionPayload` consumers.
+2. **`verifyToken` is now async with DB lookup** for `tokenVersion` and `is_active`. Edge runtimes fall back to crypto-only check via try/catch; node runtimes get full revocation.
+3. **`xlsx` package removed**, replaced with `exceljs@^4.4.0`. Any other code that used `xlsx` must migrate.
+4. **`lib/email/inbound.ts.validateAttachment` is now async** and does MIME sniffing (the function signature widened).
+5. **`docker compose up` without `.env`** now fails fast with clear errors. No more silent boot with default `compliguard`/`compliguard123` passwords.
+6. **`StorageProvider.getUrl(key, opts?)` signature widened** with optional `{clientIp}` second argument (Azure + OneDrive providers). Existing callers continue to work; new IP-pinning is opt-in.
+7. **`docker-compose.override.yml` renamed** to `docker-compose.dev.yml` and no longer auto-loaded. Use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up` for dev.
+
+### 8.7 Deferred Items (Picked Up Next Cycle)
+
+| Item | Why deferred | Recommended next step |
+|------|--------------|------------------------|
+| `npm audit fix` for `fast-xml-builder` + `postcss` | Sandbox blocked `npm` in agent context | Run from a dev machine: `npm audit fix --omit=dev` |
+| CSP `script-src 'unsafe-inline'` removal | Next.js 16 hydration injects inline scripts | Nonce-based CSP via middleware |
+| Full email-verification on signup | Out of session scope | Replaced with admin-activation gate; verification flow + email infra is a half-day |
+| `frameworks` table per-org scoping | Schema migration + backfill | Currently `super_admin`-gated; add `organizationId` column |
+| `STORAGE_SIGNING_SECRET` separation | Defense-in-depth | HKDF-derive from a master via `crypto.hkdfSync` |
+| Redis-backed sliding-window rate limit | Multi-instance scaling | Move `lib/mcp/auth.ts` deque to Redis sorted-set |
+| `webhooks.secret` encryption at rest | DB-leak defense | Encrypt with `lib/encryption.ts` `encrypt()` at write |
+| AWS `region` regex validation | URL parameter injection | `/^[a-z]{2}-[a-z]+-\d$/` at integration save time |
+| AI chat input delimiter-wrap | Cross-user prompt injection | Wrap finding titles before LLM context insertion |
+| AI conversations dedicated table | ACL across org users | Move from `knowledge_base_entries.category='ai_chat'` to `ai_conversations` |
+
+### 8.8 Verification
+
+- `npx tsc --noEmit` — clean, 0 errors.
+- `npx next build` — production build succeeds.
+- `npx vitest run` — **100/100 tests passing** across 5 test files (jwt, rbac, rate-limiter, storage, file-validator).
+- **Homelab (`http://192.168.68.62:3030`)** post-deploy:
+  - `POST /api/auth/login` → 200, `cg-session` cookie set
+  - `GET /dashboard` with cookie → 200
+  - Container runs `next-server` as `nextjs` user (production build, not `npm run dev`, not root)
+  - Migrations applied successfully via `docker exec ... psql`
+
+### 8.9 For Perplexity Comet / Future Agents Picking This Up
+
+If you're continuing work on this codebase:
+
+1. **Read `securitycheck.md`** — it has the full per-finding remediation status with file:line references.
+2. **Don't reintroduce removed patterns:**
+   - Don't fall back to default passwords or env-var defaults in compose/Dockerfile — use `${VAR:?...}` everywhere.
+   - Don't trust `file.type` on uploads — use `lib/security/file-validator.ts` `assertAllowedFile`.
+   - Don't `process.env.X = userInput` — pass credentials directly to provider constructors.
+   - Don't query DB by id-only for resources that have an `organizationId` — always include `and(eq(id, ...), eq(organizationId, session.orgId))`.
+   - Don't accept body fields like `organizationId`, `role`, `userId` from clients — derive from session/API key.
+   - Don't make outbound `fetch()` to user-supplied URLs — use `lib/security/ssrf-guard.ts` `safeFetch`.
+   - Don't store full response bodies of outbound webhooks — they may contain SSRF'd internal data.
+   - Don't compare secrets with `===` — use `crypto.timingSafeEqual` with byte-length precheck.
+3. **For new MCP tools:** read `lib/mcp/nl-query.ts` `NLQueryScopes` and add an RBAC permission check; the agent loop filters write tools based on scopes.
+4. **For new DELETE endpoints:** call `logAudit({...})` from `lib/audit/log.ts` so the destructive op is recorded.
+5. **For new webhook routes:** verify signature with `crypto.timingSafeEqual`, fail-closed in production, include replay defense (timestamp + nonce cache).
+6. **For new file-serving routes:** mirror `app/api/storage/local/[...key]/route.ts` — `Content-Disposition: attachment` + CSP + `nosniff` + sniffed MIME.
+
+### 8.10 Phase 8 Commit Log (Pushed to `origin/main`)
+
+```
+05dcd86 test(auth): update jwt.test.ts to new SessionPayload shape (post-A1)
+81bcf35 Merge A3: IDOR + org-scope + mass-assignment fixes (renumbered migration 0002)
+dfefb79 Merge A5: MCP RBAC + pentest/NL-Tests SSRF
+da9925a Merge A1: auth/setup/JWT/encryption hardening
+c9726d4 Merge A4: storage + uploads + xlsx replacement
+a95c9fb Merge A6: build/deps/logger hardening
+2323086 Merge A2: webhook/SSRF hardening
+a4ec47e fix(security): A3 — IDOR, cross-org writes, mass assignment
+2e4fbe4 fix(security): A5 — MCP RBAC, real rate limit, pentest/NL-Tests SSRF
+9d81ae9 fix(security): A1 — auth, setup, JWT, encryption hardening
+f98b6d4 fix(security): A4 — storage path traversal, MIME sniffing, xlsx replacement
+ec4cb80 fix(security): A6 — build, deps, logger, headers hardening
+bae26f6 fix(security): A2 — webhooks, Teams Bot, outbound dispatcher hardening
+```
 
