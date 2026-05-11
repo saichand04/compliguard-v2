@@ -579,10 +579,20 @@ generate_secrets() {
   fi
   echo ""
 
-  # MINIO_PASSWORD (only for fullstack)
+  # MINIO_PASSWORD
+  #
+  # Always generate this, even in minimal/dev mode where the minio service
+  # isn't started. Reason: docker-compose.yml uses
+  # ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}, which is
+  # evaluated by `docker compose` at parse time across ALL services in the
+  # file — even ones not selected for `up`. If the var is missing, compose
+  # aborts with "required variable MINIO_ROOT_PASSWORD is missing a value"
+  # before it gets a chance to read the service list. So we always populate
+  # it; in minimal/dev mode the value is unused at runtime (no minio
+  # container is started) but it satisfies the parser.
+  local generated_minio
+  generated_minio="$(gen_password 24)"
   if [[ "$DEPLOY_MODE" == "fullstack" ]]; then
-    local generated_minio
-    generated_minio="$(gen_password 24)"
     echo -e "  ${CYAN}${BOLD}MINIO_ROOT_PASSWORD${RESET}  ${GRAY}(object storage password)${RESET}"
     echo -e "  ${DIM}Auto-generated: $(mask_secret "$generated_minio")${RESET}"
     if confirm "Use auto-generated value?"; then
@@ -593,6 +603,11 @@ generate_secrets() {
       badge ok "MINIO_ROOT_PASSWORD set"
     fi
     echo ""
+  else
+    # Silent for minimal/dev — operator doesn't care about an unused service
+    # secret. Still goes into .env so compose parses cleanly.
+    MINIO_PASSWORD="$generated_minio"
+    badge gen "MINIO_ROOT_PASSWORD auto-generated (unused in ${DEPLOY_MODE} mode; required by compose parser)"
   fi
 
   # Check existing .env
@@ -859,7 +874,21 @@ run_deploy() {
   local pg_container
   pg_container=$(docker compose $compose_args ps -q postgres 2>/dev/null | head -1)
   if [[ -z "$pg_container" ]]; then
-    pg_container=$(docker ps --filter "name=compliguard.*postgres" --format "{{.ID}}" | head -1)
+    # NB: docker --filter name=... is a SUBSTRING match (Go template style),
+    # NOT a regex. The old pattern "compliguard.*postgres" was matching
+    # nothing because docker treated ".*" as literal characters. Use a
+    # plain substring that catches both compliguard-postgres-1 (legacy
+    # project name) and compliguard-v2-postgres-1.
+    pg_container=$(docker ps --filter "name=postgres" --format "{{.Names}}\t{{.ID}}" \
+      | awk '$1 ~ /compliguard.*postgres/ {print $2; exit}')
+  fi
+
+  if [[ -z "$pg_container" ]]; then
+    badge err "Could not find a postgres container after \`docker compose up\`."
+    badge err "Compose likely aborted earlier — scroll up for the actual error."
+    badge info "Common cause: a required env var (e.g. MINIO_ROOT_PASSWORD) was missing."
+    badge info "Fix the .env file and re-run \`bash scripts/deploy.sh\`."
+    return 1
   fi
 
   # Wait for Postgres to be ready
@@ -869,12 +898,25 @@ run_deploy() {
     sleep 2
   done
   echo ""
+  if (( pg_attempts >= 20 )); then
+    badge err "Postgres container $pg_container never became ready."
+    return 1
+  fi
 
   # Run migrations via drizzle-kit inside the app container
   local app_container
   app_container=$(docker compose $compose_args ps -q app 2>/dev/null | head -1)
   if [[ -z "$app_container" ]]; then
-    app_container=$(docker ps --filter "name=compliguard.*app" --format "{{.ID}}" | head -1)
+    app_container=$(docker ps --filter "name=app" --format "{{.Names}}\t{{.ID}}" \
+      | awk '$1 ~ /compliguard.*app/ {print $2; exit}')
+  fi
+
+  if [[ -z "$app_container" ]]; then
+    badge err "Could not find a compliguard app container after \`docker compose up\`."
+    badge err "The app image built but the container failed to start. Check:"
+    badge info "  docker compose logs app"
+    badge info "  docker compose ps"
+    return 1
   fi
 
   # Wait for the app container to be running and node to be available
