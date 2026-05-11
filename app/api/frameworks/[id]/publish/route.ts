@@ -4,6 +4,13 @@ import { frameworks, controls } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { requireAuth, ApiErrors, writeAuditLog } from '@/lib/api/auth-helper'
 import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+// TODO(security): scope frameworks per-org. Until that schema change, gate
+// writes to super_admin so tenant admins cannot publish each other's frameworks.
+
+const uuidSchema = z.string().uuid()
 
 interface VersionSnapshot {
   version: string
@@ -27,12 +34,16 @@ export async function POST(
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
   if (!hasPermission(session.role, PERMISSIONS.EDIT_FRAMEWORKS)) return ApiErrors.forbidden()
 
   const { id } = await params
+  if (!uuidSchema.safeParse(id).success) return ApiErrors.badRequest('Invalid id')
 
   const [fw] = await db.select().from(frameworks).where(eq(frameworks.id, id))
   if (!fw) return ApiErrors.notFound('Framework')
+
+  if (fw.isBuiltIn === true) return ApiErrors.forbidden()
 
   // Get all controls for snapshot
   const fwControls = await db.select().from(controls).where(eq(controls.frameworkId, id))
@@ -48,25 +59,30 @@ export async function POST(
 
   versions.push(newVersion)
 
-  const [updated] = await db
-    .update(frameworks)
-    .set({
-      metadata: { ...meta, versions, status: 'published' },
-      updatedAt: new Date(),
+  try {
+    const [updated] = await db
+      .update(frameworks)
+      .set({
+        metadata: { ...meta, versions, status: 'published' },
+        updatedAt: new Date(),
+      })
+      .where(eq(frameworks.id, id))
+      .returning()
+
+    await writeAuditLog({
+      organizationId: session.orgId,
+      userId: session.userId,
+      action: 'framework.publish',
+      resourceType: 'framework',
+      resourceId: id,
+      resourceTitle: fw.name,
+      description: `Published framework: ${fw.name} v${fw.version}`,
+      request: req,
     })
-    .where(eq(frameworks.id, id))
-    .returning()
 
-  await writeAuditLog({
-    organizationId: session.orgId,
-    userId: session.userId,
-    action: 'framework.publish',
-    resourceType: 'framework',
-    resourceId: id,
-    resourceTitle: fw.name,
-    description: `Published framework: ${fw.name} v${fw.version}`,
-    request: req,
-  })
-
-  return NextResponse.json({ framework: updated, version: newVersion })
+    return NextResponse.json({ framework: updated, version: newVersion })
+  } catch (err) {
+    logger.error({ err, id }, 'framework.publish failed')
+    return ApiErrors.internal()
+  }
 }

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { z } from 'zod'
 import { BUILT_IN_ROLES } from '../route'
+
+// NOTE(security): roles are platform-wide. Only super_admin may mutate them.
 
 interface CustomRole {
   id: string
@@ -27,7 +30,11 @@ async function saveCustomRoles(roles: CustomRole[]): Promise<void> {
   const updated = { ...existing, custom_roles: roles }
 
   if (settings) {
-    await db.update(systemSettings).set({ extraConfig: updated, updatedAt: new Date() })
+    // (C12) constrain UPDATE to the specific row.
+    await db
+      .update(systemSettings)
+      .set({ extraConfig: updated, updatedAt: new Date() })
+      .where(eq(systemSettings.id, settings.id))
   } else {
     await db.insert(systemSettings).values({ extraConfig: updated })
   }
@@ -62,13 +69,14 @@ export async function GET(
   return NextResponse.json({ role: { ...role, isBuiltIn: false } })
 }
 
-/** PATCH /api/roles/[id] — update a custom role */
+/** PATCH /api/roles/[id] — update a custom role (super_admin only — C12) */
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
   const { id } = await params
 
@@ -107,13 +115,14 @@ export async function PATCH(
   return NextResponse.json({ role: { ...updated, isBuiltIn: false } })
 }
 
-/** DELETE /api/roles/[id] — delete a custom role */
+/** DELETE /api/roles/[id] — delete a custom role (super_admin only — C12) */
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
   const { id } = await params
 
@@ -125,8 +134,22 @@ export async function DELETE(
   const idx = customRoles.findIndex(r => r.id === id)
   if (idx === -1) return ApiErrors.notFound('Role')
 
+  const removed = customRoles[idx]
   customRoles.splice(idx, 1)
   await saveCustomRoles(customRoles)
+
+  const { logAudit } = await import('@/lib/audit/log')
+  await logAudit({
+    organizationId: session.orgId,
+    userId: session.userId,
+    action: 'role.delete',
+    entityType: 'custom_role',
+    entityId: id,
+    entityTitle: removed.name,
+    before: removed,
+    description: `Deleted custom role: ${removed.name}`,
+    request: req,
+  })
 
   return NextResponse.json({ success: true })
 }

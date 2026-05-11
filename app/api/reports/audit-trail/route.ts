@@ -3,6 +3,8 @@ import { db } from '@/lib/db'
 import { auditLogs, users } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
+import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
+import { logger } from '@/lib/logger'
 
 function toCsv(rows: string[][]): string {
   return rows
@@ -24,6 +26,7 @@ export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
   if (!session.orgId) return ApiErrors.badRequest('No organisation associated with session')
+  if (!hasPermission(session.role, PERMISSIONS.VIEW_AUDIT_LOGS)) return ApiErrors.forbidden()
 
   const today = new Date().toISOString().split('T')[0]
   const filename = `audit-trail-${today}.csv`
@@ -93,7 +96,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('[reports/audit-trail]', err)
+    logger.error({ err }, 'reports.audit-trail failed')
     return ApiErrors.internal()
   }
 }

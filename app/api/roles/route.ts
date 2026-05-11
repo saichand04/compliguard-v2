@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { z } from 'zod'
 import { randomUUID } from 'crypto'
+
+// NOTE(security): roles are currently platform-wide (stored in the singleton
+// system_settings.extra_config.custom_roles blob). DO NOT expose write
+// operations to tenant admins — only super_admin may mutate them. If you ever
+// want per-org custom roles, move them to lib/db/schema/knowledge_base.ts's
+// `customRoles` table (which IS org-scoped) and gate writes by org match.
 
 // ─── Built-in roles (hardcoded) ─────────────────────────────────────────────
 export const BUILT_IN_ROLES = [
@@ -102,7 +109,12 @@ async function saveCustomRoles(roles: CustomRole[]): Promise<void> {
   const updated = { ...existing, custom_roles: roles }
 
   if (settings) {
-    await db.update(systemSettings).set({ extraConfig: updated, updatedAt: new Date() })
+    // (C12) Constrain UPDATE to the specific settings row to prevent
+    // accidental UPDATE-without-WHERE clobbers of every system_settings row.
+    await db
+      .update(systemSettings)
+      .set({ extraConfig: updated, updatedAt: new Date() })
+      .where(eq(systemSettings.id, settings.id))
   } else {
     await db.insert(systemSettings).values({ extraConfig: updated })
   }
@@ -137,10 +149,11 @@ export async function GET(req: NextRequest) {
   })
 }
 
-/** POST /api/roles — create a custom role */
+/** POST /api/roles — create a custom role (super_admin only — C12) */
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
   let body: unknown
   try {

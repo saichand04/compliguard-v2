@@ -30,7 +30,9 @@ export async function GET(
     .where(eq(organizations.slug, orgSlug))
     .limit(1)
 
-  if (!org) {
+  // Refuse (with 404 — do NOT reveal whether the slug exists) if the org has
+  // not opted into the public Trust Portal via the trustPublic flag.
+  if (!org || org.trustPublic !== true) {
     return NextResponse.json({ error: 'Organization not found' }, { status: 404 })
   }
 

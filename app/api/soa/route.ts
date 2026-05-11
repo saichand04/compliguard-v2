@@ -6,6 +6,10 @@ import {
 } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
+import { logger } from '@/lib/logger'
+import { z } from 'zod'
+
+const uuidSchema = z.string().uuid()
 
 // GET /api/soa?frameworkId=xxx
 // Returns all SOA entries (or defaults) for the org + framework
@@ -18,9 +22,10 @@ export async function GET(req: NextRequest) {
   const frameworkId = searchParams.get('frameworkId')
 
   if (!frameworkId) return ApiErrors.badRequest('frameworkId is required')
+  if (!uuidSchema.safeParse(frameworkId).success) return ApiErrors.badRequest('Invalid frameworkId')
 
   try {
-    // Verify org has access to this framework
+    // Verify org has access to this framework (either active assignment or built-in)
     const [orgFramework] = await db
       .select()
       .from(organizationFrameworks)
@@ -32,9 +37,7 @@ export async function GET(req: NextRequest) {
         )
       )
       .limit(1)
-
-    // We allow read even if org hasn't explicitly activated this framework
-    // (so built-in frameworks can be browsed)
+    void orgFramework // Read is allowed even without active assignment to permit browse of built-in frameworks
 
     // Get all controls for this framework
     const frameworkControls = await db
@@ -104,39 +107,51 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ entries, total: entries.length })
   } catch (err) {
-    console.error('[soa GET]', err)
+    logger.error({ err }, 'soa.list failed')
     return ApiErrors.internal()
   }
 }
 
 // POST /api/soa
 // Create or update a SOA entry
+const postSchema = z.object({
+  controlId: z.string().uuid(),
+  status: z.enum(['included', 'excluded', 'partial']).optional(),
+  justification: z.string().optional(),
+  implementationStatus: z.string().optional(),
+}).strict()
+
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
   if (!session.orgId) return ApiErrors.badRequest('No organisation associated with session')
 
-  let body: {
-    controlId?: string
-    status?: string
-    justification?: string
-    implementationStatus?: string
-  }
+  let raw: unknown
+  try { raw = await req.json() } catch { return ApiErrors.badRequest('Invalid JSON') }
 
-  try {
-    body = await req.json()
-  } catch {
-    return ApiErrors.badRequest('Invalid JSON')
-  }
+  const parsed = postSchema.safeParse(raw)
+  if (!parsed.success) return ApiErrors.badRequest(parsed.error.issues[0].message)
+  const { controlId, status, justification, implementationStatus } = parsed.data
 
-  const { controlId, status, justification, implementationStatus } = body
-
-  if (!controlId) return ApiErrors.badRequest('controlId is required')
-
-  const validStatuses = ['included', 'excluded', 'partial']
-  if (status && !validStatuses.includes(status)) {
-    return ApiErrors.badRequest('Invalid status')
-  }
+  // Validate controlId belongs to a framework that is active for this org
+  // (i.e. caller must have an organization_frameworks row for the framework
+  // that owns this control). Built-in frameworks alone are NOT enough — the
+  // org must have actually adopted them.
+  const [scopeRow] = await db
+    .select({ id: controls.id })
+    .from(controls)
+    .innerJoin(frameworks, eq(frameworks.id, controls.frameworkId))
+    .innerJoin(
+      organizationFrameworks,
+      and(
+        eq(organizationFrameworks.frameworkId, frameworks.id),
+        eq(organizationFrameworks.organizationId, session.orgId),
+        eq(organizationFrameworks.isActive, true),
+      ),
+    )
+    .where(eq(controls.id, controlId))
+    .limit(1)
+  if (!scopeRow) return ApiErrors.badRequest('controlId is not in an active framework for this organization')
 
   try {
     // Check if entry already exists
@@ -187,7 +202,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ entry: created }, { status: 201 })
     }
   } catch (err) {
-    console.error('[soa POST]', err)
+    logger.error({ err }, 'soa.upsert failed')
     return ApiErrors.internal()
   }
 }

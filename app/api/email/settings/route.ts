@@ -2,14 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema'
-import { encrypt, decrypt } from '@/lib/encryption'
+import { eq } from 'drizzle-orm'
+import { encrypt } from '@/lib/encryption'
 import { resetEmailProvider } from '@/lib/email'
+import { logger } from '@/lib/logger'
 
-// GET /api/email/settings — load current email config
+// GET /api/email/settings — load current email config (super_admin only — C12)
 export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
-  if (!['super_admin', 'admin'].includes(session.role)) return ApiErrors.forbidden()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
   const rows = await db.select().from(systemSettings).limit(1)
   const cfg = rows[0]
@@ -50,16 +52,21 @@ export async function GET(req: NextRequest) {
   })
 }
 
-// POST /api/email/settings — save email config
+// POST /api/email/settings — save email config (super_admin only — C12)
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
-  if (!['super_admin', 'admin'].includes(session.role)) return ApiErrors.forbidden()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
-  const body = await req.json() as {
+  let body: {
     provider: string
     postmark?: { serverToken?: string; fromEmail?: string; fromName?: string }
     smtp?: { host?: string; port?: string; secure?: boolean; user?: string; pass?: string; fromEmail?: string; fromName?: string }
+  }
+  try {
+    body = await req.json()
+  } catch {
+    return ApiErrors.badRequest('Invalid JSON')
   }
 
   const { provider, postmark, smtp } = body
@@ -101,12 +108,26 @@ export async function POST(req: NextRequest) {
       ? (smtp?.fromEmail || '')
       : (existing?.emailFrom || '')
 
-  await db.update(systemSettings).set({
-    emailProvider: provider,
-    emailFrom: fromEmail,
-    extraConfig: newExtra,
-    updatedAt: new Date(),
-  })
+  try {
+    // (C12) constrain UPDATE to the existing settings row; if none, insert.
+    if (existing) {
+      await db.update(systemSettings).set({
+        emailProvider: provider,
+        emailFrom: fromEmail,
+        extraConfig: newExtra,
+        updatedAt: new Date(),
+      }).where(eq(systemSettings.id, existing.id))
+    } else {
+      await db.insert(systemSettings).values({
+        emailProvider: provider,
+        emailFrom: fromEmail,
+        extraConfig: newExtra,
+      })
+    }
+  } catch (err) {
+    logger.error({ err }, 'email-settings.update failed')
+    return ApiErrors.internal()
+  }
 
   // Reset the singleton so new settings take effect
   resetEmailProvider()

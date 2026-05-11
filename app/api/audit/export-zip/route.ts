@@ -6,6 +6,8 @@ import {
 } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
+import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
+import { logger } from '@/lib/logger'
 import archiver from 'archiver'
 // stream import kept for future streaming use
 
@@ -39,6 +41,7 @@ export async function GET(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
   if (!session.orgId) return ApiErrors.badRequest('No organisation associated with session')
+  if (!hasPermission(session.role, PERMISSIONS.GENERATE_REPORTS)) return ApiErrors.forbidden()
 
   const { searchParams } = req.nextUrl
   const frameworkId = searchParams.get('frameworkId')
@@ -319,7 +322,7 @@ export async function GET(req: NextRequest) {
       },
     })
   } catch (err) {
-    console.error('[audit/export-zip]', err)
+    logger.error({ err }, 'audit.export-zip failed')
     return ApiErrors.internal()
   }
 }

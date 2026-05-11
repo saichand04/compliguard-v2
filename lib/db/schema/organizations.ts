@@ -10,6 +10,9 @@ export const organizations = pgTable('organizations', {
   slug: varchar('slug', { length: 255 }).unique(),
   trustPortalEnabled: boolean('trust_portal_enabled').default(false),
   trustPortalCustomDomain: varchar('trust_portal_custom_domain', { length: 255 }),
+  // Opt-in flag for the public Trust Portal. Defaults to false so newly created
+  // orgs are NOT publicly visible at /api/trust/[slug] until an admin enables it.
+  trustPublic: boolean('trust_public').notNull().default(false),
   metadata: jsonb('metadata'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

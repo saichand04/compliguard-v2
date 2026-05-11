@@ -3,21 +3,26 @@ import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { db } from '@/lib/db'
 import { users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
-import { getEmailProvider, resetEmailProvider } from '@/lib/email'
+import { getEmailProvider } from '@/lib/email'
 import { welcomeEmail } from '@/lib/email/templates/welcome'
-import { encrypt } from '@/lib/encryption'
 import { systemSettings } from '@/lib/db/schema'
+import { logger } from '@/lib/logger'
 
-// POST /api/email/test — send a test email to current user
+// POST /api/email/test — send a test email to current user (super_admin only — C12)
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
   if (!session) return ApiErrors.unauthorized()
-  if (!['super_admin', 'admin'].includes(session.role)) return ApiErrors.forbidden()
+  if (session.role !== 'super_admin') return ApiErrors.forbidden()
 
-  const body = await req.json() as {
+  let body: {
     provider?: string
     postmark?: { serverToken?: string; fromEmail?: string; fromName?: string }
     smtp?: { host?: string; port?: string; secure?: boolean; user?: string; pass?: string; fromEmail?: string; fromName?: string }
+  }
+  try {
+    body = await req.json()
+  } catch {
+    return ApiErrors.badRequest('Invalid JSON')
   }
 
   // If new credentials are provided in the request, temporarily override the DB config
@@ -72,7 +77,7 @@ export async function POST(req: NextRequest) {
       tag: 'test',
     })
 
-    // Update last send timestamp in settings
+    // Update last send timestamp in settings — constrain UPDATE to single row (C12).
     try {
       const rows = await db.select().from(systemSettings).limit(1)
       const cfg = rows[0]
@@ -81,10 +86,11 @@ export async function POST(req: NextRequest) {
         await db.update(systemSettings).set({
           extraConfig: { ...extra, lastSendAt: new Date().toISOString(), lastEmailError: null },
           updatedAt: new Date(),
-        })
+        }).where(eq(systemSettings.id, cfg.id))
       }
-    } catch {
+    } catch (err) {
       // Non-critical
+      logger.warn({ err }, 'email.test lastSendAt persist failed')
     }
 
     return NextResponse.json({
@@ -93,8 +99,9 @@ export async function POST(req: NextRequest) {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error'
+    logger.error({ err }, 'email.test send failed')
 
-    // Record error in settings
+    // Record error in settings — constrain UPDATE to single row (C12).
     try {
       const rows = await db.select().from(systemSettings).limit(1)
       const cfg = rows[0]
@@ -103,12 +110,13 @@ export async function POST(req: NextRequest) {
         await db.update(systemSettings).set({
           extraConfig: { ...extra, lastEmailError: message },
           updatedAt: new Date(),
-        })
+        }).where(eq(systemSettings.id, cfg.id))
       }
-    } catch {
-      // Non-critical
+    } catch (innerErr) {
+      logger.warn({ err: innerErr }, 'email.test lastError persist failed')
     }
 
-    return NextResponse.json({ ok: false, message: `Failed to send: ${message}` })
+    // Do not leak raw error to client — return generic message.
+    return NextResponse.json({ ok: false, message: 'Failed to send test email' })
   }
 }

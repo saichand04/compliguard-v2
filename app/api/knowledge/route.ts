@@ -4,6 +4,7 @@ import { knowledgeBaseEntries } from '@/lib/db/schema'
 import { eq, and, ilike, or, sql, desc } from 'drizzle-orm'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { generateEmbedding, buildEmbeddingText } from '@/lib/knowledge/embeddings'
+import { logger } from '@/lib/logger'
 import { z } from 'zod'
 
 // ── GET: list entries with pagination ─────────────────────────────────────────
@@ -21,6 +22,13 @@ export async function GET(req: NextRequest) {
 
   const conditions: ReturnType<typeof eq>[] = []
 
+  // (C11) Restrict visibility to public entries OR entries owned by caller's org.
+  // Tenants with no org (defensive) only see public.
+  const visibility = session.orgId
+    ? or(eq(knowledgeBaseEntries.isPublic, true), eq(knowledgeBaseEntries.organizationId, session.orgId))!
+    : eq(knowledgeBaseEntries.isPublic, true)
+  conditions.push(visibility)
+
   if (category && category !== 'all') {
     conditions.push(eq(knowledgeBaseEntries.category, category))
   }
@@ -36,7 +44,7 @@ export async function GET(req: NextRequest) {
     )
   }
 
-  const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+  const whereClause = and(...conditions)
 
   const [entries, countResult] = await Promise.all([
     db
@@ -71,7 +79,7 @@ const createSchema = z.object({
   tags: z.array(z.string()).optional(),
   isPublic: z.boolean().optional().default(false),
   generateEmbedding: z.boolean().optional().default(false),
-})
+}).strict()
 
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
@@ -88,12 +96,22 @@ export async function POST(req: NextRequest) {
 
   const data = result.data
 
+  // (C11) Only super_admin may create cross-org public entries.
+  const isPublic = data.isPublic === true
+  if (isPublic && session.role !== 'super_admin') {
+    return ApiErrors.forbidden()
+  }
+
   let embedding: number[] | null = null
 
   if (data.generateEmbedding) {
-    const embText = buildEmbeddingText(data.title, data.content, data.tags ?? [])
-    const emb = await generateEmbedding(embText)
-    embedding = emb.length > 0 ? emb : null
+    try {
+      const embText = buildEmbeddingText(data.title, data.content, data.tags ?? [])
+      const emb = await generateEmbedding(embText)
+      embedding = emb.length > 0 ? emb : null
+    } catch (err) {
+      logger.error({ err }, 'knowledge.embedding failed')
+    }
   }
 
   const [entry] = await db
@@ -103,8 +121,9 @@ export async function POST(req: NextRequest) {
       content: data.content,
       category: data.category,
       tags: data.tags ?? [],
-      isPublic: data.isPublic,
+      isPublic,
       embedding: embedding as unknown as null,
+      // organizationId is FORCED from session — never from body.
       organizationId: session.orgId ?? null,
       createdBy: session.userId,
       metadata: { sourceType: 'internal' },

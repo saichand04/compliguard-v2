@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { frameworks } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import { validateApiKey, hasScope } from '@/lib/api/api-key-auth'
+import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
   const apiKeyData = await validateApiKey(request)
@@ -37,7 +38,8 @@ export async function GET(request: NextRequest) {
       data: all,
       meta: { total: all.length },
     })
-  } catch {
+  } catch (err) {
+    logger.error({ err }, 'v1.frameworks.list failed')
     return NextResponse.json({ success: false, error: 'Internal server error', code: 'INTERNAL_ERROR' }, { status: 500 })
   }
 }
