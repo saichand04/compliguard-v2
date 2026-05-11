@@ -13,12 +13,14 @@ services:
     ports:
       - "${PORT:-3030}:3030"
     environment:
+      # POSTGRES_PASSWORD is required (no default fallback) — see postgres
+      # service below for rationale.
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://compliguard:${POSTGRES_PASSWORD:-compliguard}@postgres:5432/compliguard
+      - DATABASE_URL=postgresql://compliguard:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@postgres:5432/compliguard
       - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3030}
       - NEXTAUTH_URL_INTERNAL=${NEXTAUTH_URL_INTERNAL:-http://localhost:3030}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set (>= 32 chars)}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set (>= 32 chars)}
       - STORAGE_PROVIDER=${STORAGE_PROVIDER:-local}
       - LOCAL_STORAGE_PATH=/data/uploads
       - EMAIL_PROVIDER=${EMAIL_PROVIDER:-mock}
@@ -34,6 +36,17 @@ services:
       redis:
         condition: service_healthy
     restart: unless-stopped
+    # Read-only root filesystem + writable tmpfs for /tmp. Next.js standalone
+    # only needs to write to /tmp (next/image cache, pino's pretty buffer) and
+    # the mounted uploads volume. If a new component needs to write elsewhere,
+    # mount an explicit named volume — don't relax this flag.
+    read_only: true
+    tmpfs:
+      - /tmp:size=128M,mode=1777
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3030/api/health"]
       interval: 30s
@@ -43,13 +56,24 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # No host port mapping — postgres is reachable only on the internal compose
+    # network. Operators who need a psql shell can use `docker exec` or a
+    # one-off `docker run --network <compose-net>` adapter. Exposing 5432 on
+    # the host turned a few self-hosters' boxes into Internet-facing databases.
     environment:
       - POSTGRES_DB=compliguard
       - POSTGRES_USER=compliguard
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-compliguard}
+      # ":?" forces compose to abort with a clear error if POSTGRES_PASSWORD
+      # is unset, instead of silently booting with the cargo-cult default
+      # "compliguard" that anyone scanning Shodan can guess.
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U compliguard"]
       interval: 10s
@@ -59,15 +83,23 @@ services:
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
+    # MinIO ports are intentionally exposed on the host so operators can reach
+    # the admin console (9001) and S3 API (9000) from a browser/CLI. If you
+    # don't need either — e.g. you only access MinIO from the `app` container
+    # — remove the `ports:` block; the service-to-service DNS name still works.
     ports:
       - "9000:9000"
       - "9001:9001"
     environment:
       - MINIO_ROOT_USER=${MINIO_ROOT_USER:-compliguard}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-compliguard123}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set}
     volumes:
       - minio_data:/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
@@ -76,9 +108,15 @@ services:
 
   redis:
     image: redis:7-alpine
+    # No host port mapping — Redis is reachable only on the internal compose
+    # network. Same rationale as postgres above.
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -97,6 +135,10 @@ services:
     depends_on:
       - app
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres_data:

@@ -74,9 +74,12 @@ apt-get install -y -qq \
   openssl
 
 # Node.js 20 LTS
+# Security note: NodeSource's setup_20.x is piped to bash, which is the
+# upstream-recommended install method. We enforce HTTPS-only + TLS 1.2+ via
+# curl flags so a downgrade attack can't substitute a malicious script.
 if ! command -v node &>/dev/null || [[ "$(node -e 'process.exit(parseInt(process.versions.node) < 20 ? 1 : 0)' 2>/dev/null; echo $?)" == "1" ]]; then
   info "Installing Node.js 20 LTS..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+  curl --proto '=https' --tlsv1.2 -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
   success "Node.js $(node --version) installed"
 else
@@ -86,7 +89,7 @@ fi
 # PostgreSQL 16
 if ! command -v psql &>/dev/null; then
   info "Installing PostgreSQL 16..."
-  curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
+  curl --proto '=https' --tlsv1.2 -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
   apt-get update -qq
   apt-get install -y postgresql-16
@@ -102,7 +105,9 @@ read -r -p "Install Docker for container support? [y/N] " install_docker
 if [[ "$install_docker" =~ ^[Yy]$ ]]; then
   if ! command -v docker &>/dev/null; then
     info "Installing Docker..."
-    curl -fsSL https://get.docker.com | bash
+    # get.docker.com is Docker Inc.'s official convenience installer. Pipe to
+    # bash with TLS-pinning curl flags so a network MITM can't swap the script.
+    curl --proto '=https' --tlsv1.2 -fsSL https://get.docker.com | bash
     systemctl enable docker
     systemctl start docker
     success "Docker installed"
