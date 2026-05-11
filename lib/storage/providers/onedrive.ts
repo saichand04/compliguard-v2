@@ -1,6 +1,10 @@
 import { Client } from '@microsoft/microsoft-graph-client'
 import { ClientSecretCredential } from '@azure/identity'
 import type { StorageProvider, UploadResult } from '../types'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
+
+/** Maximum sharing-link TTL: 10 minutes. */
+const SHARING_TTL_SECONDS = 10 * 60
 
 /**
  * OneDrive/SharePoint storage provider using Microsoft Graph API.
@@ -35,6 +39,7 @@ export class OneDriveStorageProvider implements StorageProvider {
   }
 
   async upload(buffer: Buffer, key: string, mimeType: string, _orgId: string): Promise<UploadResult> {
+    assertSafeStorageKey(key)
     const client = this.getClient()
     const driveId = this.getDriveId()
     // Use the key as the remote path within the drive
@@ -53,6 +58,7 @@ export class OneDriveStorageProvider implements StorageProvider {
   }
 
   async download(key: string, _orgId: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const client = this.getClient()
     const driveId = this.getDriveId()
     const response = await client.api(`/drives/${driveId}/root:/${key}:/content`).get()
@@ -67,6 +73,7 @@ export class OneDriveStorageProvider implements StorageProvider {
   }
 
   async delete(key: string, _orgId: string): Promise<void> {
+    assertSafeStorageKey(key)
     const client = this.getClient()
     const driveId = this.getDriveId()
     try {
@@ -79,18 +86,36 @@ export class OneDriveStorageProvider implements StorageProvider {
     }
   }
 
+  /**
+   * Generate a sharing link for a file.
+   *
+   * Security (A4):
+   *  - scope is "organization" (not "anonymous") so the link only works for
+   *    users signed in to the same tenant.  Tenants that don't allow
+   *    organization-scoped sharing will see Graph return an error; in that
+   *    case we fall back to returning the storage key so the caller can serve
+   *    the file via an authenticated proxy endpoint.
+   *  - TTL is clamped to SHARING_TTL_SECONDS (10 minutes).
+   */
   async getSignedUrl(key: string, expiresIn: number, _orgId: string): Promise<string> {
+    assertSafeStorageKey(key)
     const client = this.getClient()
     const driveId = this.getDriveId()
-    // Create a sharing link valid for the specified duration
-    const response = await client
-      .api(`/drives/${driveId}/root:/${key}:/createLink`)
-      .post({
-        type: 'view',
-        scope: 'anonymous',
-        expirationDateTime: new Date(Date.now() + expiresIn * 1000).toISOString(),
-      })
-    return response.link?.webUrl || ''
+    const effectiveTtl = Math.min(Math.max(60, expiresIn), SHARING_TTL_SECONDS)
+    try {
+      const response = await client
+        .api(`/drives/${driveId}/root:/${key}:/createLink`)
+        .post({
+          type: 'view',
+          scope: 'organization',
+          expirationDateTime: new Date(Date.now() + effectiveTtl * 1000).toISOString(),
+        })
+      return response.link?.webUrl || key
+    } catch {
+      // Tenant doesn't support organization-scoped sharing, or the call
+      // failed.  Return the key so the caller serves via authenticated proxy.
+      return key
+    }
   }
 
   async testConnection(): Promise<{ ok: boolean; message: string }> {

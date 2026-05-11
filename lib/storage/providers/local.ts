@@ -1,19 +1,29 @@
 import { mkdir, writeFile, readFile, unlink, access } from 'fs/promises'
+import path from 'path'
 import { join, dirname } from 'path'
 import { SignJWT } from 'jose'
 import type { StorageProvider, UploadResult } from '../types'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
 
 const DEFAULT_PATH = '/var/lib/compliguard/evidence'
 
 export class LocalStorageProvider implements StorageProvider {
   private basePath: string
+  private safeBase: string
 
   constructor() {
     this.basePath = process.env.STORAGE_LOCAL_PATH || DEFAULT_PATH
+    this.safeBase = path.resolve(this.basePath)
   }
 
   private getFullPath(key: string): string {
-    return join(this.basePath, key)
+    assertSafeStorageKey(key)
+    const resolved = path.resolve(this.safeBase, key)
+    const prefix = this.safeBase.endsWith(path.sep) ? this.safeBase : this.safeBase + path.sep
+    if (!resolved.startsWith(prefix) && resolved !== this.safeBase) {
+      throw new Error('Resolved storage path escaped base directory')
+    }
+    return resolved
   }
 
   async upload(buffer: Buffer, key: string, mimeType: string, orgId: string): Promise<UploadResult> {
@@ -46,6 +56,7 @@ export class LocalStorageProvider implements StorageProvider {
   }
 
   async getSignedUrl(key: string, expiresIn: number, _orgId: string): Promise<string> {
+    assertSafeStorageKey(key)
     // Generate a signed JWT download token that the API route will validate
     const secret = process.env.JWT_SECRET
     if (!secret) throw new Error('JWT_SECRET not set')

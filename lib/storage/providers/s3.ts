@@ -6,6 +6,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { StorageProvider, UploadResult, StorageProviderType } from '../types'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
 
 export class S3StorageProvider implements StorageProvider {
   private client: S3Client
@@ -33,6 +34,7 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async upload(buffer: Buffer, key: string, mimeType: string, _orgId: string): Promise<UploadResult> {
+    assertSafeStorageKey(key)
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: key,
@@ -50,6 +52,7 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async download(key: string, _orgId: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,
@@ -65,6 +68,7 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async delete(key: string, _orgId: string): Promise<void> {
+    assertSafeStorageKey(key)
     const command = new DeleteObjectCommand({
       Bucket: this.bucket,
       Key: key,
@@ -73,6 +77,7 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   async getSignedUrl(key: string, expiresIn: number, _orgId: string): Promise<string> {
+    assertSafeStorageKey(key)
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: key,

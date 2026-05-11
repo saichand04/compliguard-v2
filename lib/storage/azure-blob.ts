@@ -5,6 +5,10 @@
  */
 import crypto from 'crypto'
 import type { StorageProvider, StorageFile, UploadOptions, AzureBlobConfig } from './index'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
+
+/** SAS read TTL in seconds — 15 minutes. */
+const SAS_TTL_SECONDS = 15 * 60
 
 export class AzureBlobStorageAdaptor implements StorageProvider {
   private accountName: string
@@ -100,6 +104,7 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
 
   async upload(options: UploadOptions): Promise<StorageFile> {
     const { key, buffer, mimeType, metadata } = options
+    assertSafeStorageKey(key)
 
     const extraHeaders: Record<string, string> = {
       'content-type': mimeType,
@@ -119,12 +124,14 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
   }
 
   async download(key: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const response = await this.request('GET', key)
     const arrayBuffer = await response.arrayBuffer()
     return Buffer.from(arrayBuffer)
   }
 
   async delete(key: string): Promise<void> {
+    assertSafeStorageKey(key)
     const url = this.blobUrl(key)
     const date = new Date().toUTCString()
     const headers: Record<string, string> = {
@@ -142,10 +149,20 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
     }
   }
 
-  async getUrl(key: string): Promise<string> {
-    // Generate a SAS token for reading this blob (1 hour)
+  /**
+   * Generate a SAS URL for a blob.
+   *
+   * Security (A4):
+   *  - signedProtocol is 'https' (no HTTP fallback).
+   *  - TTL is hard-capped at SAS_TTL_SECONDS (15 minutes).
+   *  - opts.clientIp (if provided) pins the SAS to a single client IP via
+   *    signedIP.  If omitted the SAS is unpinned — callers should pass the
+   *    requester's IP whenever possible.  This is a documented trade-off.
+   */
+  async getUrl(key: string, opts?: { clientIp?: string }): Promise<string> {
+    assertSafeStorageKey(key)
     const start = new Date()
-    const expiry = new Date(start.getTime() + 3600 * 1000)
+    const expiry = new Date(start.getTime() + SAS_TTL_SECONDS * 1000)
 
     const toISO = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z')
 
@@ -153,7 +170,7 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
     const signedStart = toISO(start)
     const signedExpiry = toISO(expiry)
     const canonicalizedResource = `/blob/${this.accountName}/${this.containerName}/${key}`
-    const signedIP = ''
+    const signedIP = opts?.clientIp || ''
     const signedProtocol = 'https'
     const signedVersion = '2021-06-08'
     const signedResource = 'b'
@@ -185,13 +202,16 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
       se: signedExpiry,
       sr: signedResource,
       sp: signedPermissions,
+      spr: signedProtocol,
       sig: signature,
     })
+    if (signedIP) params.set('sip', signedIP)
 
     return `${this.blobUrl(key)}?${params.toString()}`
   }
 
   async exists(key: string): Promise<boolean> {
+    assertSafeStorageKey(key)
     const url = this.blobUrl(key)
     const date = new Date().toUTCString()
     const headers: Record<string, string> = {
@@ -206,6 +226,7 @@ export class AzureBlobStorageAdaptor implements StorageProvider {
   }
 
   async list(prefix: string): Promise<StorageFile[]> {
+    if (prefix) assertSafeStorageKey(prefix)
     const url = `https://${this.accountName}.blob.core.windows.net/${this.containerName}?restype=container&comp=list&prefix=${encodeURIComponent(prefix)}`
     const date = new Date().toUTCString()
     const headers: Record<string, string> = {

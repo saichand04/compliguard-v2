@@ -3,8 +3,13 @@ import {
   StorageSharedKeyCredential,
   generateBlobSASQueryParameters,
   BlobSASPermissions,
+  SASProtocol,
 } from '@azure/storage-blob'
 import type { StorageProvider, UploadResult } from '../types'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
+
+/** SAS read TTL in seconds — 15 minutes. */
+const SAS_TTL_SECONDS = 15 * 60
 
 export class AzureBlobStorageProvider implements StorageProvider {
   private client: BlobServiceClient
@@ -24,6 +29,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
   }
 
   async upload(buffer: Buffer, key: string, mimeType: string, _orgId: string): Promise<UploadResult> {
+    assertSafeStorageKey(key)
     const containerClient = this.getContainerClient()
     // Ensure container exists
     await containerClient.createIfNotExists()
@@ -43,6 +49,7 @@ export class AzureBlobStorageProvider implements StorageProvider {
   }
 
   async download(key: string, _orgId: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const blobClient = this.getContainerClient().getBlobClient(key)
     const response = await blobClient.download()
     if (!response.readableStreamBody) {
@@ -58,11 +65,28 @@ export class AzureBlobStorageProvider implements StorageProvider {
   }
 
   async delete(key: string, _orgId: string): Promise<void> {
+    assertSafeStorageKey(key)
     const blobClient = this.getContainerClient().getBlobClient(key)
     await blobClient.deleteIfExists()
   }
 
-  async getSignedUrl(key: string, expiresIn: number, _orgId: string): Promise<string> {
+  /**
+   * Generate a SAS URL for a single blob.
+   *
+   * Security (A4):
+   *  - protocol: HTTPS only (never include 'http' in the SAS).
+   *  - TTL is clamped to SAS_TTL_SECONDS (15 minutes) regardless of caller.
+   *  - clientIp (optional) is passed via opts.clientIp; when provided the SAS
+   *    is bound to that IP via ipRange.  When omitted we still issue a SAS but
+   *    without IP pinning — the trade-off is documented inline.
+   */
+  async getSignedUrl(
+    key: string,
+    expiresIn: number,
+    _orgId: string,
+    opts?: { clientIp?: string },
+  ): Promise<string> {
+    assertSafeStorageKey(key)
     // Parse account name and key from connection string for SAS generation
     const connStr = process.env.STORAGE_AZURE_CONNECTION_STRING || ''
     const accountNameMatch = connStr.match(/AccountName=([^;]+)/)
@@ -78,13 +102,26 @@ export class AzureBlobStorageProvider implements StorageProvider {
     const accountKey = accountKeyMatch[1]
     const sharedKeyCredential = new StorageSharedKeyCredential(accountName, accountKey)
 
-    const sasOptions = {
+    // Hard cap on TTL — never longer than SAS_TTL_SECONDS even if caller asks
+    // for more (some legacy callsites pass 3600).
+    const effectiveTtl = Math.min(Math.max(60, expiresIn), SAS_TTL_SECONDS)
+
+    const sasOptions: Parameters<typeof generateBlobSASQueryParameters>[0] = {
       containerName: this.container,
       blobName: key,
       permissions: BlobSASPermissions.parse('r'),
       startsOn: new Date(),
-      expiresOn: new Date(Date.now() + expiresIn * 1000),
+      expiresOn: new Date(Date.now() + effectiveTtl * 1000),
+      protocol: SASProtocol.Https,
     }
+
+    if (opts?.clientIp) {
+      // Pin the SAS to the requesting client IP.
+      sasOptions.ipRange = { start: opts.clientIp, end: opts.clientIp }
+    }
+    // Trade-off: when clientIp is not supplied (legacy callsites) the SAS can
+    // be replayed from any IP within its 15-minute window.  Callers SHOULD
+    // pass the requester's IP whenever it is known.
 
     const sasToken = generateBlobSASQueryParameters(sasOptions, sharedKeyCredential).toString()
     const blobClient = this.getContainerClient().getBlobClient(key)

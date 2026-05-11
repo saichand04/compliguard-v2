@@ -1,12 +1,18 @@
 /**
  * Postmark Inbound Email Parser
- * 
+ *
  * Parses the Postmark inbound webhook payload to extract the upload token
  * (from the Reply-To address) and any file attachments.
- * 
+ *
  * Inbound email format:
  *   Reply-To: evidence+{token}@inbound.compliguard.app
  */
+
+import {
+  assertAllowedFile,
+  FileValidationError,
+  sniffMime,
+} from '@/lib/security/file-validator'
 
 export interface InboundAttachment {
   filename: string
@@ -116,14 +122,41 @@ export const ALLOWED_MIME_TYPES = [
 export const MAX_ATTACHMENT_SIZE_BYTES = 50 * 1024 * 1024 // 50 MB
 
 /**
- * Validate an attachment by MIME type and size.
+ * Validate an attachment by sniffing its actual MIME type from the file
+ * bytes (the declared Postmark ContentType is attacker-controlled) and
+ * enforcing the allowlist + size cap.
+ *
+ * Returns the canonical sniffed MIME on success so callers can persist that
+ * instead of the declared one.
  */
-export function validateAttachment(att: InboundAttachment): { valid: boolean; reason?: string } {
-  if (!ALLOWED_MIME_TYPES.includes(att.mimeType)) {
-    return { valid: false, reason: `File type not allowed: ${att.mimeType}` }
-  }
+export async function validateAttachment(
+  att: InboundAttachment,
+): Promise<{ valid: true; mime: string } | { valid: false; reason: string }> {
   if (att.size > MAX_ATTACHMENT_SIZE_BYTES) {
-    return { valid: false, reason: `File too large: ${att.size} bytes (max ${MAX_ATTACHMENT_SIZE_BYTES})` }
+    return {
+      valid: false,
+      reason: `File too large: ${att.size} bytes (max ${MAX_ATTACHMENT_SIZE_BYTES})`,
+    }
   }
-  return { valid: true }
+
+  try {
+    const result = await assertAllowedFile(att.content, att.mimeType, ALLOWED_MIME_TYPES)
+    return { valid: true, mime: result.mime }
+  } catch (err) {
+    if (err instanceof FileValidationError) {
+      return { valid: false, reason: err.message }
+    }
+    return { valid: false, reason: 'Attachment rejected' }
+  }
+}
+
+/**
+ * Detect the MIME type of an attachment from its bytes.  Exposed for callers
+ * that want the sniffed MIME without the full allowlist enforcement.
+ */
+export async function detectAttachmentMime(
+  att: InboundAttachment,
+): Promise<string | null> {
+  const result = await sniffMime(att.content)
+  return result.mime
 }
