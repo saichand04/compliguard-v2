@@ -3,22 +3,30 @@
  * Stores files at /tmp/compliguard-uploads/[orgId or prefix]/[key]
  */
 import { mkdir, writeFile, readFile, unlink, access, readdir, stat } from 'fs/promises'
+import path from 'path'
 import { join, dirname, basename } from 'path'
 import type { StorageProvider, StorageFile, UploadOptions, LocalConfig } from './index'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
 
 const DEFAULT_BASE_PATH = '/tmp/compliguard-uploads'
 
 export class LocalStorageAdaptor implements StorageProvider {
   private basePath: string
+  private safeBase: string
 
   constructor(config?: LocalConfig) {
     this.basePath = config?.basePath || process.env.STORAGE_LOCAL_PATH || DEFAULT_BASE_PATH
+    this.safeBase = path.resolve(this.basePath)
   }
 
   private fullPath(key: string): string {
-    // Sanitize key to prevent path traversal
-    const safe = key.replace(/\.\./g, '_').replace(/^\//, '')
-    return join(this.basePath, safe)
+    assertSafeStorageKey(key)
+    const resolved = path.resolve(this.safeBase, key)
+    const prefix = this.safeBase.endsWith(path.sep) ? this.safeBase : this.safeBase + path.sep
+    if (!resolved.startsWith(prefix) && resolved !== this.safeBase) {
+      throw new Error('Resolved storage path escaped base directory')
+    }
+    return resolved
   }
 
   async upload(options: UploadOptions): Promise<StorageFile> {
@@ -28,11 +36,17 @@ export class LocalStorageAdaptor implements StorageProvider {
     await writeFile(fp, buffer)
     return {
       key,
-      url: `/api/storage/local/${key}`,
+      url: this.publicUrl(key),
       size: buffer.length,
       mimeType,
       metadata,
     }
+  }
+
+  private publicUrl(key: string): string {
+    // key is already asserted safe upstream; encode each segment so spaces/etc
+    // don't break the URL.
+    return `/api/storage/local/${key.split('/').map(encodeURIComponent).join('/')}`
   }
 
   async download(key: string): Promise<Buffer> {
@@ -50,7 +64,8 @@ export class LocalStorageAdaptor implements StorageProvider {
   }
 
   async getUrl(key: string): Promise<string> {
-    return `/api/storage/local/${key}`
+    assertSafeStorageKey(key)
+    return this.publicUrl(key)
   }
 
   async exists(key: string): Promise<boolean> {
@@ -63,7 +78,8 @@ export class LocalStorageAdaptor implements StorageProvider {
   }
 
   async list(prefix: string): Promise<StorageFile[]> {
-    const dir = this.fullPath(prefix)
+    // Allow an empty-string prefix to list the root.
+    const dir = prefix ? this.fullPath(prefix) : this.safeBase
     const results: StorageFile[] = []
     try {
       const entries = await readdir(dir, { withFileTypes: true })
@@ -73,7 +89,7 @@ export class LocalStorageAdaptor implements StorageProvider {
           const fp = this.fullPath(key)
           try {
             const s = await stat(fp)
-            results.push({ key, size: s.size, url: `/api/storage/local/${key}` })
+            results.push({ key, size: s.size, url: this.publicUrl(key) })
           } catch {
             results.push({ key })
           }

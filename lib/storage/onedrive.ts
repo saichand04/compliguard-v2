@@ -4,6 +4,10 @@
  * OAuth2 client credentials flow for access token.
  */
 import type { StorageProvider, StorageFile, UploadOptions, OneDriveConfig } from './index'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
+
+/** Maximum sharing-link TTL: 10 minutes. */
+const SHARING_TTL_SECONDS = 10 * 60
 
 export class OneDriveStorageAdaptor implements StorageProvider {
   private config: OneDriveConfig
@@ -67,6 +71,7 @@ export class OneDriveStorageAdaptor implements StorageProvider {
 
   async upload(options: UploadOptions): Promise<StorageFile> {
     const { key, buffer, mimeType, metadata } = options
+    assertSafeStorageKey(key)
     const token = await this.getAccessToken()
 
     // Use upload session for large files, or direct PUT for ≤4MB
@@ -143,6 +148,7 @@ export class OneDriveStorageAdaptor implements StorageProvider {
   }
 
   async download(key: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const token = await this.getAccessToken()
     const url = `${this.itemPath(key)}/content`
     const response = await fetch(url, {
@@ -159,6 +165,7 @@ export class OneDriveStorageAdaptor implements StorageProvider {
   }
 
   async delete(key: string): Promise<void> {
+    assertSafeStorageKey(key)
     const token = await this.getAccessToken()
     const url = this.itemPath(key)
     const response = await fetch(url, {
@@ -171,7 +178,18 @@ export class OneDriveStorageAdaptor implements StorageProvider {
     }
   }
 
+  /**
+   * Generate a sharing link for a file.
+   *
+   * Security (A4):
+   *  - scope is "organization" (tenant-restricted) — never anonymous.
+   *  - TTL is clamped to SHARING_TTL_SECONDS (10 minutes).
+   *  - If the tenant rejects organization-scoped sharing, we fall back to
+   *    returning the storage key so the caller can serve via authenticated
+   *    proxy rather than minting an anonymous link.
+   */
   async getUrl(key: string): Promise<string> {
+    assertSafeStorageKey(key)
     const token = await this.getAccessToken()
     const url = `${this.itemPath(key)}/createLink`
     const response = await fetch(url, {
@@ -182,36 +200,24 @@ export class OneDriveStorageAdaptor implements StorageProvider {
       },
       body: JSON.stringify({
         type: 'view',
-        scope: 'anonymous',
-        expirationDateTime: new Date(Date.now() + 3600 * 1000).toISOString(),
+        scope: 'organization',
+        expirationDateTime: new Date(Date.now() + SHARING_TTL_SECONDS * 1000).toISOString(),
       }),
     })
 
     if (!response.ok) {
-      // Fallback: try direct download URL via item metadata
-      try {
-        const metaUrl = `${this.itemPath(key)}`
-        const metaResp = await fetch(metaUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        if (metaResp.ok) {
-          const item = await metaResp.json() as {
-            '@microsoft.graph.downloadUrl'?: string
-            webUrl?: string
-          }
-          return item['@microsoft.graph.downloadUrl'] || item.webUrl || ''
-        }
-      } catch {
-        // ignore
-      }
-      return ''
+      // Tenant doesn't support organization-scoped sharing.  Return the key
+      // so the caller serves the file via an authenticated proxy endpoint
+      // (never fall back to anonymous sharing).
+      return key
     }
 
     const data = await response.json() as { link?: { webUrl?: string } }
-    return data.link?.webUrl || ''
+    return data.link?.webUrl || key
   }
 
   async exists(key: string): Promise<boolean> {
+    assertSafeStorageKey(key)
     try {
       const token = await this.getAccessToken()
       const url = this.itemPath(key)
@@ -225,6 +231,7 @@ export class OneDriveStorageAdaptor implements StorageProvider {
   }
 
   async list(prefix: string): Promise<StorageFile[]> {
+    if (prefix) assertSafeStorageKey(prefix)
     try {
       const token = await this.getAccessToken()
       const folder = this.config.folderId

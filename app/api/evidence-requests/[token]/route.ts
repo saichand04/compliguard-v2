@@ -4,6 +4,21 @@ import { evidenceRequests, evidence, organizations } from '@/lib/db/schema'
 import { eq, and } from 'drizzle-orm'
 import { getStorageProvider, generateStorageKey } from '@/lib/storage'
 import crypto from 'crypto'
+import { authLimiter, checkRateLimit } from '@/lib/rate-limiter'
+import { ALLOWED_MIME_TYPES, MAX_ATTACHMENT_SIZE_BYTES } from '@/lib/email/inbound'
+import {
+  assertAllowedFile,
+  FileValidationError,
+  sanitizeFilename,
+} from '@/lib/security/file-validator'
+
+function clientIp(req: NextRequest): string {
+  return (
+    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    req.headers.get('x-real-ip') ||
+    'unknown'
+  )
+}
 
 // GET /api/evidence-requests/[token] — validate token and return request details
 export async function GET(
@@ -63,6 +78,14 @@ export async function POST(
 
   if (!token) return NextResponse.json({ error: 'Token required' }, { status: 400 })
 
+  // Per-IP rate limit so attackers cannot fuzz tokens or replay uploads.
+  const ip = clientIp(req)
+  try {
+    await checkRateLimit(authLimiter, `ev-req-${ip}`)
+  } catch {
+    return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  }
+
   const rows = await db
     .select()
     .from(evidenceRequests)
@@ -96,19 +119,40 @@ export async function POST(
     return NextResponse.json({ error: 'No file provided' }, { status: 400 })
   }
 
-  const MAX_SIZE = 50 * 1024 * 1024 // 50 MB
-  if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: 'File too large (max 50 MB)' }, { status: 413 })
+  if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+    return NextResponse.json({ error: 'File too large' }, { status: 413 })
   }
 
   const fileBuffer = Buffer.from(await file.arrayBuffer())
+
+  let sniffedMime: string
+  try {
+    const result = await assertAllowedFile(fileBuffer, file.type, ALLOWED_MIME_TYPES)
+    sniffedMime = result.mime
+  } catch (err) {
+    if (err instanceof FileValidationError) {
+      // Trace token-based upload rejections for incident response.
+      console.warn(
+        `[EvidenceRequest Upload] rejected requestId=${request.id} ip=${ip} reason=${err.message}`,
+      )
+      return NextResponse.json({ error: err.message }, { status: 400 })
+    }
+    return NextResponse.json({ error: 'File rejected' }, { status: 400 })
+  }
+
+  const safeName = sanitizeFilename(file.name)
   const fileUuid = crypto.randomUUID()
-  const storageKey = generateStorageKey(request.organizationId, file.name, fileUuid)
+  const storageKey = generateStorageKey(request.organizationId, safeName, fileUuid)
   const storage = getStorageProvider()
+
+  // One-line traceable log entry per token upload.
+  console.info(
+    `[EvidenceRequest Upload] accept requestId=${request.id} ip=${ip} key=${storageKey} mime=${sniffedMime} size=${fileBuffer.length}`,
+  )
 
   let uploadResult
   try {
-    uploadResult = await storage.upload(fileBuffer, storageKey, file.type, request.organizationId)
+    uploadResult = await storage.upload(fileBuffer, storageKey, sniffedMime, request.organizationId)
   } catch (err) {
     console.error('[EvidenceRequest Upload] Storage error:', err)
     return NextResponse.json({ error: 'File upload failed. Please try again.' }, { status: 500 })
@@ -124,9 +168,9 @@ export async function POST(
     storageProvider: uploadResult.provider,
     storageKey: uploadResult.key,
     storageBucket: uploadResult.bucket,
-    fileName: file.name,
-    fileSize: file.size,
-    mimeType: file.type,
+    fileName: safeName,
+    fileSize: fileBuffer.length,
+    mimeType: sniffedMime,
     status: 'pending',
     metadata: {
       source: 'evidence_request',

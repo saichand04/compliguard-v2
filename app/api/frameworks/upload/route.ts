@@ -3,6 +3,15 @@
  * Accept multipart/form-data with a framework file (CSV, JSON, or XLSX).
  * Parse, normalize, run mapping engine, return preview.
  * Stores an upload record in the framework_uploads table.
+ *
+ * Security (A4):
+ *  - XLSX is parsed via the `exceljs` package — `xlsx` (sheetjs) has known
+ *    prototype-pollution + ReDoS CVEs and is no longer a dependency.
+ *  - At module load we freeze Object.prototype and Object.getPrototypeOf({})
+ *    application-wide so a malicious workbook cannot pollute the JS engine's
+ *    base prototypes.  This is intentional.
+ *  - Both the Content-Length header and the actual buffer size are checked
+ *    against a 10 MB cap before any parsing happens.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -17,50 +26,84 @@ import { eq } from 'drizzle-orm'
 
 export const dynamic = 'force-dynamic'
 
-// Max file size: 5MB
-const MAX_FILE_SIZE = 5 * 1024 * 1024
+// Defense-in-depth against prototype-pollution payloads embedded in untrusted
+// workbooks.  This is module-load-time, app-wide, and intentional.
+try {
+  Object.freeze(Object.prototype)
+  Object.freeze(Object.getPrototypeOf({}))
+} catch {
+  // Already frozen in some test environments — ignore.
+}
+
+// Max file size: 10 MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024
 
 /**
- * Parse an XLSX buffer into CSV-like content string for the normalizer.
- * Uses dynamic import so the xlsx package is optional — returns null if unavailable.
+ * Parse an XLSX buffer into a CSV-like content string for the normalizer.
+ * Uses the `exceljs` package; returns null on parse failure.
  */
 async function parseXlsx(buffer: Buffer): Promise<string | null> {
   try {
-    // Dynamic import — xlsx is an optional peer dependency
-    const XLSX = await import('xlsx')
-    const workbook = XLSX.read(buffer, { type: 'buffer' })
+    const ExcelJS = await import('exceljs')
+    const wb = new ExcelJS.Workbook()
+    // exceljs accepts a Node Buffer or an ArrayBuffer-like input.
+    await wb.xlsx.load(buffer as unknown as ArrayBuffer)
 
-    // Use the first sheet
-    const sheetName = workbook.SheetNames[0]
-    if (!sheetName) return null
+    const sheet = wb.worksheets[0]
+    if (!sheet) return null
 
-    const sheet = workbook.Sheets[sheetName]
-    const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+    // Build rows: header row first (assumed row 1), then data rows.
+    const rows: Record<string, string>[] = []
+    let headers: string[] = []
 
-    if (rows.length === 0) return null
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      // row.values is 1-indexed; element 0 is always undefined.
+      const values = (row.values as unknown[]).slice(1).map((v) => {
+        if (v == null) return ''
+        if (typeof v === 'object' && v !== null) {
+          // exceljs can return rich-text / formula objects.
+          const obj = v as { text?: string; result?: unknown; richText?: { text: string }[] }
+          if (typeof obj.text === 'string') return obj.text
+          if (Array.isArray(obj.richText)) {
+            return obj.richText.map((r) => r.text).join('')
+          }
+          if (obj.result != null) return String(obj.result)
+          return ''
+        }
+        return String(v)
+      })
 
-    // Convert to CSV-like normalized content
-    // Try to detect common column names for control ID and title
-    const headers = Object.keys(rows[0])
+      if (rowNumber === 1) {
+        headers = values.map((v) => v.trim() || `col${headers.length + 1}`)
+        return
+      }
 
-    // Map each row to a NormalizedControl-compatible CSV row
-    const idCol = headers.find((h) =>
-      /^(id|control.?id|control.?number|ctrl.?id|identifier|ref)/i.test(h)
-    ) ?? headers[0]
+      const obj: Record<string, string> = {}
+      for (let i = 0; i < headers.length; i++) {
+        obj[headers[i]] = values[i] ?? ''
+      }
+      rows.push(obj)
+    })
 
-    const titleCol = headers.find((h) =>
-      /^(title|name|control.?name|control.?title|description|requirement)/i.test(h)
-    ) ?? headers[1] ?? headers[0]
+    if (headers.length === 0 || rows.length === 0) return null
 
-    const descCol = headers.find((h) =>
-      /^(description|detail|guidance|objective|requirement|text)/i.test(h) && h !== titleCol
-    ) ?? ''
+    const idCol =
+      headers.find((h) => /^(id|control.?id|control.?number|ctrl.?id|identifier|ref)/i.test(h)) ??
+      headers[0]
 
-    const catCol = headers.find((h) =>
-      /^(category|domain|family|area|group|section)/i.test(h)
-    ) ?? ''
+    const titleCol =
+      headers.find((h) => /^(title|name|control.?name|control.?title|description|requirement)/i.test(h)) ??
+      headers[1] ??
+      headers[0]
 
-    // Build CSV: id,title,description,category
+    const descCol =
+      headers.find(
+        (h) => /^(description|detail|guidance|objective|requirement|text)/i.test(h) && h !== titleCol,
+      ) ?? ''
+
+    const catCol =
+      headers.find((h) => /^(category|domain|family|area|group|section)/i.test(h)) ?? ''
+
     const csvLines: string[] = ['id,title,description,category']
     for (const row of rows) {
       const id = String(row[idCol] ?? '').trim()
@@ -84,6 +127,12 @@ export async function POST(req: NextRequest) {
   if (!hasPermission(session.role, PERMISSIONS.CREATE_CONTROLS)) return ApiErrors.forbidden()
   if (!session.orgId) return ApiErrors.forbidden()
 
+  // Reject oversized requests before we buffer multipart data.
+  const contentLength = Number(req.headers.get('content-length') || '0')
+  if (contentLength > 0 && contentLength > MAX_FILE_SIZE + 64 * 1024) {
+    return ApiErrors.badRequest('File too large. Maximum 10MB.')
+  }
+
   let formData: FormData
   try {
     formData = await req.formData()
@@ -99,7 +148,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return ApiErrors.badRequest('File too large. Maximum 5MB.')
+    return ApiErrors.badRequest('File too large. Maximum 10MB.')
   }
 
   const filename = file.name.toLowerCase()
@@ -132,27 +181,34 @@ export async function POST(req: NextRequest) {
 
   try {
     if (format === 'xlsx') {
-      // Parse XLSX using dynamic import of the xlsx package
       const buffer = Buffer.from(await file.arrayBuffer())
+      if (buffer.length > MAX_FILE_SIZE) {
+        await db
+          .update(frameworkUploads)
+          .set({ status: 'failed', errorMessage: 'File too large' })
+          .where(eq(frameworkUploads.id, uploadRecord.id))
+        return ApiErrors.badRequest('File too large. Maximum 10MB.')
+      }
+
       const csvContent = await parseXlsx(buffer)
 
       if (csvContent === null) {
-        // xlsx package not available or parsing failed
         await db
           .update(frameworkUploads)
           .set({
             status: 'failed',
-            errorMessage: 'XLSX parsing unavailable. Please install the xlsx package (npm install xlsx) or export to CSV.',
+            errorMessage: 'XLSX parsing failed. The file may be corrupt or unreadable.',
           })
           .where(eq(frameworkUploads.id, uploadRecord.id))
 
         return NextResponse.json(
           {
-            error: 'XLSX parsing is not available in this deployment. Please export your spreadsheet as CSV and re-upload, or contact your administrator to install the xlsx package.',
+            error:
+              'XLSX parsing failed. Please verify the file is a valid Excel workbook, or export as CSV and re-upload.',
             hint: 'Export the spreadsheet as CSV: File → Save As → CSV (Comma delimited)',
             uploadId: uploadRecord.id,
           },
-          { status: 422 }
+          { status: 422 },
         )
       }
 

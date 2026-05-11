@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
-import { readFile } from 'fs/promises'
-import { join, extname } from 'path'
+import { readFile, realpath } from 'fs/promises'
+import path from 'path'
+import { extname } from 'path'
+import {
+  assertSafeStorageKey,
+  FileValidationError,
+  isActiveContentMime,
+  pickServeMime,
+  sanitizeFilename,
+  sniffMime,
+} from '@/lib/security/file-validator'
 
-/** Simple MIME type lookup by extension */
-function getMimeType(filePath: string): string {
+/** Fallback extension → MIME map (only used when content sniffing yields nothing). */
+function extToMime(filePath: string): string | null {
   const ext = extname(filePath).toLowerCase()
   const map: Record<string, string> = {
     '.pdf': 'application/pdf',
@@ -13,11 +22,8 @@ function getMimeType(filePath: string): string {
     '.jpeg': 'image/jpeg',
     '.gif': 'image/gif',
     '.webp': 'image/webp',
-    '.svg': 'image/svg+xml',
     '.txt': 'text/plain',
     '.csv': 'text/csv',
-    '.json': 'application/json',
-    '.xml': 'application/xml',
     '.zip': 'application/zip',
     '.doc': 'application/msword',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -29,15 +35,27 @@ function getMimeType(filePath: string): string {
     '.mp3': 'audio/mpeg',
     '.log': 'text/plain',
   }
-  return map[ext] || 'application/octet-stream'
+  return map[ext] ?? null
 }
 
 const BASE_PATH = process.env.STORAGE_LOCAL_PATH || '/tmp/compliguard-uploads'
+const SAFE_BASE = path.resolve(BASE_PATH)
+const SAFE_BASE_PREFIX = SAFE_BASE.endsWith(path.sep) ? SAFE_BASE : SAFE_BASE + path.sep
 
 /**
  * GET /api/storage/local/[...key]
  * Serve files from local filesystem storage.
  * Requires authentication.
+ *
+ * Security (A4 / C15):
+ *  - sanitized key is validated via assertSafeStorageKey, then path.resolve
+ *    must remain under SAFE_BASE + path.sep (not merely startsWith(SAFE_BASE)).
+ *  - after readFile, realpath() is re-checked under SAFE_BASE + path.sep so
+ *    symlinks cannot escape.
+ *  - Content-Type is determined by sniffing the first bytes; HTML/SVG/XML
+ *    and executable types are refused.
+ *  - Response is forced as attachment + strict CSP, X-Content-Type-Options,
+ *    X-Frame-Options, Referrer-Policy.
  */
 export async function GET(
   req: NextRequest,
@@ -51,34 +69,72 @@ export async function GET(
     return ApiErrors.badRequest('No key provided')
   }
 
-  // Sanitize: prevent path traversal
-  const sanitized = keyParts.map((part) => part.replace(/\.\./g, '_'))
-  const key = sanitized.join('/')
-  const filePath = join(BASE_PATH, key)
+  const sanitizedKey = keyParts.join('/')
 
-  // Ensure the resolved path stays within BASE_PATH
-  if (!filePath.startsWith(BASE_PATH)) {
+  try {
+    assertSafeStorageKey(sanitizedKey)
+  } catch (err) {
+    if (err instanceof FileValidationError) {
+      return ApiErrors.badRequest('Invalid key')
+    }
     return ApiErrors.badRequest('Invalid key')
   }
 
-  try {
-    const buffer = await readFile(filePath)
-    const mimeType = getMimeType(filePath)
-    const fileName = sanitized[sanitized.length - 1]
+  // Resolve against an absolute base.  The resolved path must remain inside
+  // SAFE_BASE + path.sep — startsWith(SAFE_BASE) alone would allow a sibling
+  // like "/tmp/compliguard-uploads-evil/...".
+  const resolved = path.resolve(SAFE_BASE, sanitizedKey)
+  if (!resolved.startsWith(SAFE_BASE_PREFIX) && resolved !== SAFE_BASE) {
+    return ApiErrors.badRequest('Invalid key')
+  }
 
-    return new NextResponse(buffer, {
-      status: 200,
-      headers: {
-        'Content-Type': mimeType,
-        'Content-Length': String(buffer.length),
-        'Content-Disposition': `inline; filename="${fileName}"`,
-        'Cache-Control': 'private, max-age=3600',
-      },
-    })
+  let buffer: Buffer
+  try {
+    buffer = await readFile(resolved)
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return NextResponse.json({ error: 'File not found' }, { status: 404 })
     }
     return NextResponse.json({ error: 'Failed to read file' }, { status: 500 })
   }
+
+  // Defeat symlink escapes by re-resolving the real path.
+  try {
+    const real = await realpath(resolved)
+    if (!real.startsWith(SAFE_BASE_PREFIX) && real !== SAFE_BASE) {
+      return ApiErrors.badRequest('Invalid key')
+    }
+  } catch {
+    return ApiErrors.badRequest('Invalid key')
+  }
+
+  // Sniff actual content; refuse anything that browsers would render as
+  // active content.
+  const sniffed = await sniffMime(buffer)
+  const fallback = extToMime(resolved)
+
+  if (isActiveContentMime(sniffed.mime) || isActiveContentMime(fallback)) {
+    return NextResponse.json(
+      { error: 'File type cannot be served' },
+      { status: 415 },
+    )
+  }
+
+  const mimeType = pickServeMime(sniffed.mime, fallback)
+  const fileName = sanitizeFilename(keyParts[keyParts.length - 1] || 'file')
+  const encodedName = encodeURIComponent(fileName)
+
+  return new NextResponse(new Uint8Array(buffer), {
+    status: 200,
+    headers: {
+      'Content-Type': mimeType,
+      'Content-Length': String(buffer.length),
+      'Content-Disposition': `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+    },
+  })
 }

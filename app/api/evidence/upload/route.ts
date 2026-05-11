@@ -3,6 +3,11 @@ import { requireAuth, ApiErrors } from '@/lib/api/auth-helper'
 import { hasPermission, PERMISSIONS } from '@/lib/auth/rbac'
 import { uploadEvidenceFile } from '@/lib/storage/upload-evidence'
 import { ALLOWED_MIME_TYPES, MAX_ATTACHMENT_SIZE_BYTES } from '@/lib/email/inbound'
+import {
+  assertAllowedFile,
+  FileValidationError,
+  sanitizeFilename,
+} from '@/lib/security/file-validator'
 
 /**
  * POST /api/evidence/upload
@@ -13,6 +18,11 @@ import { ALLOWED_MIME_TYPES, MAX_ATTACHMENT_SIZE_BYTES } from '@/lib/email/inbou
  *
  * Uses the configured storage provider (local/s3/azure_blob/minio/onedrive).
  * Returns the storage key which must be passed to POST /api/evidence to create the DB record.
+ *
+ * Security (A4):
+ *  - file.type is NOT trusted; we sniff the magic bytes via assertAllowedFile
+ *    and persist the sniffed MIME on the storage record.
+ *  - filename is sanitized before being stored or echoed back.
  */
 export async function POST(req: NextRequest) {
   const session = await requireAuth(req)
@@ -32,33 +42,41 @@ export async function POST(req: NextRequest) {
     return ApiErrors.badRequest('No file provided')
   }
 
-  // Validate MIME type
-  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
-    return ApiErrors.badRequest(`File type not allowed: ${file.type}`)
-  }
-
-  // Validate size
+  // Validate size up-front so we don't buffer multi-GB uploads.
   if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
     return ApiErrors.badRequest(`File too large: max ${MAX_ATTACHMENT_SIZE_BYTES / 1024 / 1024}MB`)
   }
 
-  try {
-    const buffer = Buffer.from(await file.arrayBuffer())
+  const buffer = Buffer.from(await file.arrayBuffer())
 
+  let sniffedMime: string
+  try {
+    const result = await assertAllowedFile(buffer, file.type, ALLOWED_MIME_TYPES)
+    sniffedMime = result.mime
+  } catch (err) {
+    if (err instanceof FileValidationError) {
+      return ApiErrors.badRequest(err.message)
+    }
+    return ApiErrors.badRequest('File rejected')
+  }
+
+  const safeName = sanitizeFilename(file.name)
+
+  try {
     const { key, url } = await uploadEvidenceFile(
       buffer,
-      file.name,
-      file.type,
-      session.orgId
+      safeName,
+      sniffedMime,
+      session.orgId,
     )
 
     return NextResponse.json({
       ok: true,
       storageKey: key,
       storageUrl: url,
-      fileName: file.name,
-      fileSize: file.size,
-      mimeType: file.type,
+      fileName: safeName,
+      fileSize: buffer.length,
+      mimeType: sniffedMime,
     })
   } catch (err: unknown) {
     return ApiErrors.internal(`Upload failed: ${(err as Error).message}`)

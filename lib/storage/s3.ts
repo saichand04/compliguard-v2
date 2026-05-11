@@ -12,6 +12,7 @@ import {
 } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import type { StorageProvider, StorageFile, UploadOptions, S3Config } from './index'
+import { assertSafeStorageKey } from '@/lib/security/file-validator'
 
 export class S3StorageAdaptor implements StorageProvider {
   private client: S3Client
@@ -39,6 +40,7 @@ export class S3StorageAdaptor implements StorageProvider {
 
   async upload(options: UploadOptions): Promise<StorageFile> {
     const { key, buffer, mimeType, metadata } = options
+    assertSafeStorageKey(key)
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
@@ -53,6 +55,7 @@ export class S3StorageAdaptor implements StorageProvider {
   }
 
   async download(key: string): Promise<Buffer> {
+    assertSafeStorageKey(key)
     const response = await this.client.send(
       new GetObjectCommand({ Bucket: this.bucket, Key: key })
     )
@@ -65,18 +68,21 @@ export class S3StorageAdaptor implements StorageProvider {
   }
 
   async delete(key: string): Promise<void> {
+    assertSafeStorageKey(key)
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key })
     )
   }
 
   async getUrl(key: string): Promise<string> {
+    assertSafeStorageKey(key)
     // Generate a presigned GET URL valid for 1 hour
     const command = new GetObjectCommand({ Bucket: this.bucket, Key: key })
     return getSignedUrl(this.client, command, { expiresIn: 3600 })
   }
 
   async exists(key: string): Promise<boolean> {
+    assertSafeStorageKey(key)
     try {
       await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }))
       return true
@@ -86,6 +92,7 @@ export class S3StorageAdaptor implements StorageProvider {
   }
 
   async list(prefix: string): Promise<StorageFile[]> {
+    if (prefix) assertSafeStorageKey(prefix)
     const response = await this.client.send(
       new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix })
     )
