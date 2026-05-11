@@ -4,6 +4,7 @@ import { systemSettings, organizations, users } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { z } from 'zod'
+import { getSessionFromRequest, setSessionCookie } from '@/lib/auth/jwt'
 
 export async function PATCH(
   req: NextRequest,
@@ -12,18 +13,30 @@ export async function PATCH(
   const { step } = await params
   const stepNumber = parseInt(step, 10)
 
-  let body: Record<string, unknown>
-  try {
-    body = await req.json()
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
-  }
-
   // Get or create system settings
   let [settings] = await db.select().from(systemSettings).limit(1)
   if (!settings) {
     const [created] = await db.insert(systemSettings).values({}).returning()
     settings = created
+  }
+
+  // Once setup has been completed, the wizard endpoints become privileged
+  // and may only be invoked by an authenticated super_admin (e.g. to repair
+  // a misconfigured deployment). Anonymous callers are blocked outright to
+  // prevent an attacker from re-running the wizard and seizing the admin
+  // account on a live installation.
+  if (settings.setupCompleted) {
+    const session = await getSessionFromRequest(req)
+    if (!session || session.role !== 'super_admin') {
+      return NextResponse.json({ error: 'Setup already complete' }, { status: 403 })
+    }
+  }
+
+  let body: Record<string, unknown>
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
   switch (stepNumber) {
@@ -78,13 +91,26 @@ export async function PATCH(
       const [org] = await db.select().from(organizations).limit(1)
       const passwordHash = await bcrypt.hash(password, 12)
 
-      await db.insert(users).values({
+      const [createdAdmin] = await db.insert(users).values({
         organizationId: org?.id,
         email: email.toLowerCase(),
         firstName,
         lastName,
         passwordHash,
         role: 'super_admin',
+      }).returning()
+
+      // Sign the freshly-created super_admin in immediately so the remaining
+      // wizard steps (which are now gated behind super_admin auth) work
+      // without forcing the operator to detour through /signin.
+      await setSessionCookie({
+        userId: createdAdmin.id,
+        orgId: createdAdmin.organizationId,
+        email: createdAdmin.email,
+        role: createdAdmin.role,
+        firstName: createdAdmin.firstName,
+        lastName: createdAdmin.lastName,
+        tokenVersion: createdAdmin.tokenVersion,
       })
 
       await db.update(systemSettings).set({ setupStep: 3, updatedAt: new Date() }).where(eq(systemSettings.id, settings.id))

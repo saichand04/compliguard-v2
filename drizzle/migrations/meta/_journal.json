@@ -8,6 +8,13 @@
       "when": 1778123068057,
       "tag": "0000_init_all_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1778976000000,
+      "tag": "0001_add_token_version_and_password_reset",
+      "breakpoints": true
     }
   ]
 }

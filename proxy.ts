@@ -44,8 +44,17 @@ function isPublicPath(pathname: string): boolean {
 async function verifyJwt(token: string): Promise<boolean> {
   const secret = process.env.JWT_SECRET
   if (!secret) return false
+  // Reject the well-known build-time placeholder, and reject any secret
+  // shorter than 32 chars. Both indicate a misconfigured deployment.
+  if (secret === 'build-time-placeholder-secret-32-chars') return false
+  if (secret.length < 32) return false
   try {
-    await jwtVerify(token, new TextEncoder().encode(secret))
+    // Enforce issuer so that other tokens signed with the same secret
+    // (e.g. storage download tokens from lib/storage/providers/local.ts)
+    // cannot be used in place of a session cookie.
+    await jwtVerify(token, new TextEncoder().encode(secret), {
+      issuer: 'compliguard',
+    })
     return true
   } catch {
     return false

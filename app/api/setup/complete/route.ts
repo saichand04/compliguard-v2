@@ -1,14 +1,24 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { systemSettings } from '@/lib/db/schema'
-import { setSetupCookie } from '@/lib/auth/jwt'
+import { getSessionFromRequest, setSetupCookie } from '@/lib/auth/jwt'
 import { logger } from '@/lib/logger'
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
     const [settings] = await db.select().from(systemSettings).limit(1)
     if (!settings) {
       return NextResponse.json({ error: 'System settings not found. Please complete all setup steps.' }, { status: 400 })
+    }
+
+    // Re-running the wizard on a live installation is only permitted for an
+    // authenticated super_admin — otherwise anyone hitting this endpoint
+    // could reset the setup flag and access the wizard.
+    if (settings.setupCompleted) {
+      const session = await getSessionFromRequest(req)
+      if (!session || session.role !== 'super_admin') {
+        return NextResponse.json({ error: 'Setup already complete' }, { status: 403 })
+      }
     }
 
     // Mark setup as completed

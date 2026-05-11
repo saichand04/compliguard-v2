@@ -39,14 +39,21 @@ export async function GET(req: NextRequest) {
 /**
  * DELETE /api/auth/session
  * Clears the session cookie (sign out).
+ *
+ * The `secure` attribute is derived from NEXTAUTH_URL so it matches
+ * what was used at set time — using NODE_ENV here would mark the
+ * deletion `secure` on plain-HTTP production deployments and the
+ * browser would silently ignore it, leaving the cookie in place.
  */
 export async function DELETE() {
+  const isHttps = (process.env.NEXTAUTH_URL || '').startsWith('https://')
   const response = NextResponse.json({ ok: true })
   response.cookies.set(COOKIE_NAME, '', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttps,
     sameSite: 'lax',
     maxAge: 0,
+    expires: new Date(0),
     path: '/',
   })
   return response
