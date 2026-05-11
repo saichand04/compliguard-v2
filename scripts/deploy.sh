@@ -697,6 +697,15 @@ EOF
 STORAGE_PROVIDER=local
 LOCAL_STORAGE_PATH=/data/uploads
 
+# ── MinIO (unused in ${DEPLOY_MODE} mode but required by compose parser) ──
+# docker-compose.yml references \${MINIO_ROOT_PASSWORD:?...} on the minio
+# service. Compose evaluates that interpolation at PARSE time across ALL
+# services, even ones we don't start. Without this line the deploy aborts
+# with "required variable MINIO_ROOT_PASSWORD is missing a value" — and
+# no containers come up. The value is never read at runtime in this mode.
+MINIO_ROOT_USER=compliguard
+MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
+
 EOF
   fi
 
