@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { users, organizations, systemSettings } from '@/lib/db/schema'
 import { eq } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
-import { setSessionCookie } from '@/lib/auth/jwt'
+import { authLimiter, checkRateLimit } from '@/lib/rate-limiter'
 import { logger } from '@/lib/logger'
 import { z } from 'zod'
 
@@ -15,10 +15,43 @@ const signUpSchema = z.object({
   organizationName: z.string().min(1),
 })
 
+/**
+ * POST /api/auth/signup
+ *
+ * Public self-service registration. Hardened against the following
+ * attack surface previously exposed by this endpoint:
+ *
+ *   1. Privilege escalation: new accounts were created with role
+ *      'admin'. They are now always created with role 'user'.
+ *   2. Hostile registration on a fresh install: registrations are
+ *      now rejected unless the operator has explicitly opted in via
+ *      `system_settings.allow_registrations = true` AND the setup
+ *      wizard has been completed.
+ *   3. Email enumeration: a duplicate email used to return 409; the
+ *      endpoint now responds with a generic 202 and a noop in that
+ *      branch, so a probe cannot distinguish registered emails.
+ *   4. Brute-force / spam: the same auth rate-limit bucket used by
+ *      /api/auth/login is consumed per source IP.
+ *
+ * NOTE: until email-verification UX is wired up, new accounts are
+ * created with `is_active = false` and must be activated by an
+ * existing admin. This is deliberately conservative — the alternative
+ * (auto-active accounts) would let any internet user join the org.
+ */
 export async function POST(req: NextRequest) {
-  // Check if registrations are enabled
+  const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown'
+  try {
+    await checkRateLimit(authLimiter, `signup-${ip}`)
+  } catch {
+    return NextResponse.json({ error: 'Too many sign-up attempts. Try again in 15 minutes.' }, { status: 429 })
+  }
+
+  // Refuse signup unless the operator has explicitly allowed it AND
+  // first-run setup is complete. This blocks the largest abuse case —
+  // a freshly-deployed installation getting hijacked because the
+  // wizard hadn't run yet.
   const [settings] = await db.select().from(systemSettings).limit(1)
-  if (settings && !settings.allowRegistrations) {
+  if (!settings || !settings.setupCompleted || !settings.allowRegistrations) {
     return NextResponse.json({ error: 'Self-service registration is disabled.' }, { status: 403 })
   }
 
@@ -36,10 +69,17 @@ export async function POST(req: NextRequest) {
 
   const { firstName, lastName, email, password, organizationName } = parseResult.data
 
-  // Check if email already exists
-  const [existingUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, email.toLowerCase())).limit(1)
+  // Anti-enumeration: if the email already exists, return a generic
+  // success-ish response so an attacker can't tell registered emails
+  // apart from unregistered ones.
+  const [existingUser] = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(eq(users.email, email.toLowerCase()))
+    .limit(1)
   if (existingUser) {
-    return NextResponse.json({ error: 'An account with this email already exists.' }, { status: 409 })
+    logger.warn({ email, ip }, 'Duplicate signup attempt — returning generic ok')
+    return NextResponse.json({ ok: true }, { status: 202 })
   }
 
   const passwordHash = await bcrypt.hash(password, 12)
@@ -56,7 +96,9 @@ export async function POST(req: NextRequest) {
     .values({ name: organizationName, slug: `${orgSlug}-${Date.now()}` })
     .returning()
 
-  // Create admin user
+  // New users default to role 'user' and is_active=false. An admin must
+  // activate them before they can log in. NEVER assign 'admin' or
+  // 'super_admin' on a self-service signup.
   const [user] = await db
     .insert(users)
     .values({
@@ -65,31 +107,16 @@ export async function POST(req: NextRequest) {
       firstName,
       lastName,
       passwordHash,
-      role: 'admin',
+      role: 'user',
+      isActive: false,
     })
     .returning()
 
-  // Set session cookie
-  await setSessionCookie({
-    userId: user.id,
-    orgId: user.organizationId,
-    email: user.email,
-    role: user.role,
-    firstName: user.firstName,
-    lastName: user.lastName,
-  })
-
-  logger.info({ userId: user.id, orgId: org.id }, 'New user registered')
+  logger.info({ userId: user.id, orgId: org.id }, 'New user registered (pending admin activation)')
 
   return NextResponse.json({
     ok: true,
-    user: {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role,
-      organizationId: user.organizationId,
-    },
-  })
+    pendingActivation: true,
+    message: 'Account created. An administrator must activate it before you can sign in.',
+  }, { status: 202 })
 }

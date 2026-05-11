@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
     role: user.role,
     firstName: user.firstName,
     lastName: user.lastName,
+    tokenVersion: user.tokenVersion,
   })
 
   logger.info({ userId: user.id, ip }, 'Successful login')

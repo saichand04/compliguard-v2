@@ -5,13 +5,48 @@ const IV_LENGTH = 16
 const TAG_LENGTH = 16
 const ENCODING = 'hex'
 
+/** Known-insecure placeholder injected at Docker build time; never valid at runtime. */
+const BUILD_TIME_PLACEHOLDER_SECRET = 'build-time-placeholder-secret-32-chars'
+
 /**
- * Get a 32-byte encryption key derived from NEXTAUTH_SECRET or fallback.
+ * Resolve the secret used to derive the AES key. Prefers a dedicated
+ * `ENCRYPTION_KEY` env var, falling back to `NEXTAUTH_SECRET` so that
+ * existing deployments continue working. Throws if neither is set,
+ * if the value is shorter than 32 chars, or if it matches the
+ * well-known build-time placeholder.
+ */
+function getEncryptionSecret(): string {
+  const secret = process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET
+  if (!secret) {
+    throw new Error('NEXTAUTH_SECRET (or ENCRYPTION_KEY) is required')
+  }
+  if (secret === BUILD_TIME_PLACEHOLDER_SECRET) {
+    throw new Error(
+      'NEXTAUTH_SECRET / ENCRYPTION_KEY is the build-time placeholder. Configure a real secret in your runtime environment.',
+    )
+  }
+  if (secret.length < 32) {
+    throw new Error('NEXTAUTH_SECRET / ENCRYPTION_KEY must be at least 32 characters long')
+  }
+  return secret
+}
+
+/**
+ * Get a 32-byte encryption key derived from the configured secret using
+ * HKDF-SHA256 with a fixed salt + info so the derivation is reproducible
+ * across processes and clearly domain-separated from any other key
+ * material derived from the same secret.
  */
 function getEncryptionKey(): Buffer {
-  const secret = process.env.NEXTAUTH_SECRET || 'fallback-32-char-key-padded-here!'
-  // Use SHA-256 to always produce exactly 32 bytes regardless of secret length
-  return crypto.createHash('sha256').update(secret).digest()
+  const secret = getEncryptionSecret()
+  const derived = crypto.hkdfSync(
+    'sha256',
+    secret,
+    Buffer.from('compliguard-encryption-v1'),
+    Buffer.from('aes-256-gcm'),
+    32,
+  )
+  return Buffer.from(derived)
 }
 
 /**
