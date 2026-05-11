@@ -12,6 +12,15 @@ import { eq, and, desc, sql, ilike, or, lt } from 'drizzle-orm'
 import type { MCPTool, MCPToolResult } from './types'
 
 // ---------------------------------------------------------------------------
+// SECURITY NOTE: every tool below takes `orgId` as its second parameter from
+// the auth context (API-key.orgId or session.orgId). orgId values supplied
+// inside the `args` payload are IGNORED and never forwarded to a DB query —
+// callers cannot pivot to another org by passing { orgId: '...' } in the
+// JSON-RPC params. All DB queries filter the org-scoped tables on the
+// auth-context orgId.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
 // Tool definitions (used in tools/list and manifest)
 // ---------------------------------------------------------------------------
 
@@ -294,6 +303,9 @@ export async function list_frameworks(
 
 // ---------------------------------------------------------------------------
 // Tool 2: get_control_status
+// orgId comes from the auth context. We additionally require that the control
+// belongs to a framework the caller's org has activated, to prevent enumeration
+// of controls from frameworks the org has not subscribed to.
 // ---------------------------------------------------------------------------
 export async function get_control_status(
   args: Record<string, unknown>,
@@ -309,6 +321,19 @@ export async function get_control_status(
     .limit(1)
 
   if (!control) return errorResult(`Control ${controlId} not found`)
+
+  // Verify the framework is one the caller's org has activated.
+  const [orgFramework] = await db
+    .select({ id: organizationFrameworks.id })
+    .from(organizationFrameworks)
+    .where(
+      and(
+        eq(organizationFrameworks.organizationId, orgId),
+        eq(organizationFrameworks.frameworkId, control.frameworkId),
+      )
+    )
+    .limit(1)
+  if (!orgFramework) return errorResult(`Control ${controlId} not found`)
 
   // Get assignment/status for this org
   const [assignment] = await db
@@ -535,11 +560,17 @@ export async function get_compliance_score(
   const frameworkId = args.frameworkId as string | undefined
 
   if (frameworkId) {
-    // Score for a specific framework
+    // Score for a specific framework — must be activated for this org.
     const [fw] = await db
       .select({ id: frameworks.id, name: frameworks.name, shortName: frameworks.shortName })
       .from(frameworks)
-      .where(eq(frameworks.id, frameworkId))
+      .innerJoin(organizationFrameworks, eq(organizationFrameworks.frameworkId, frameworks.id))
+      .where(
+        and(
+          eq(frameworks.id, frameworkId),
+          eq(organizationFrameworks.organizationId, orgId),
+        )
+      )
       .limit(1)
 
     if (!fw) return errorResult(`Framework ${frameworkId} not found`)
@@ -671,6 +702,21 @@ export async function search_controls(
   ]
 
   if (frameworkId) {
+    // Caller specified a frameworkId — confirm the org has that framework
+    // activated before exposing its controls.
+    const [orgFw] = await db
+      .select({ id: organizationFrameworks.id })
+      .from(organizationFrameworks)
+      .where(
+        and(
+          eq(organizationFrameworks.organizationId, orgId),
+          eq(organizationFrameworks.frameworkId, frameworkId),
+        )
+      )
+      .limit(1)
+    if (!orgFw) {
+      return textResult({ controls: [], count: 0, query })
+    }
     conditions.push(eq(controls.frameworkId, frameworkId))
   } else {
     // Restrict to frameworks the org has active
