@@ -858,78 +858,101 @@ run_deploy() {
   # ── Inject admin user via psql ────────────────────────────────────────────────
   echo -e "  ${CYAN}Creating admin account (${ADMIN_EMAIL})...${RESET}"
 
-  # Generate bcrypt hash of admin password
-  # Strategy 1 (PRIMARY): Use bcryptjs from inside the app container — ALWAYS available
-  # because bcryptjs is a runtime dependency (not devDep) and is in the production image.
-  # Password passed via environment variable to avoid shell quoting / injection issues.
-  local ADMIN_HASH
-  badge info "Generating bcrypt hash via app container..."
-  ADMIN_HASH=$(docker exec -e ADMIN_PW="${ADMIN_PASSWORD}" "$app_container" \
-    node -e "
-      const b = require('/app/node_modules/bcryptjs');
-      process.stdout.write(b.hashSync(process.env.ADMIN_PW, 12));
-    " 2>/dev/null)
+  # Hash the password using pgcrypto inside the running postgres container.
+  # postgres:16-alpine ships pgcrypto, so this works on every supported deploy
+  # without depending on host-side python+bcrypt, apache2-utils, or bcryptjs
+  # inside the standalone Next.js image (where /app/node_modules is minimal
+  # — bcryptjs is bundled into the route chunk, not exposed as a require()
+  # target — so `docker exec app node -e "require('bcryptjs')..."` fails).
+  #
+  # We do hashing + UPSERT in a single SQL block so:
+  #   - the plaintext password never appears in the users table
+  #   - a failure to create the extension or compute the hash aborts the deploy
+  #     (instead of silently storing an empty string and producing "Invalid
+  #     email or password" on every login)
+  #   - the password is passed via psql --set so passwords with $, ', \, etc.
+  #     are safely escaped by psql instead of by hand-rolled sed.
 
-  # Strategy 2: python3-bcrypt on the host (available on some distros)
-  if [[ -z "$ADMIN_HASH" ]]; then
-    ADMIN_HASH=$(ADMIN_PW="${ADMIN_PASSWORD}" python3 - <<'PYEOF' 2>/dev/null
-import os, sys
-pw = os.environ.get('ADMIN_PW', '')
-try:
-    import bcrypt
-    print(bcrypt.hashpw(pw.encode(), bcrypt.gensalt(12)).decode())
-except ImportError:
-    sys.exit(1)
-PYEOF
-    )
-  fi
+  # Write the SQL to a temp file rather than embedding a heredoc inside $(...).
+  # Heredocs containing PL/pgSQL $$ markers, single-quoted strings, and
+  # SQL parser literals like $2a$/$2b$ confuse bash's tokenizer when wrapped
+  # in command substitution + backslash line continuation.
+  local sql_file
+  sql_file=$(mktemp -t cg-admin-XXXXXX.sql)
+  trap 'rm -f "$sql_file"' RETURN
+  # Note on the SQL below:
+  #   - psql expands :'admin_email' / :'admin_pw' as quoted string literals in
+  #     regular statements, but NOT inside dollar-quoted bodies ($$...$$), so
+  #     we use plain SQL (CREATE EXTENSION, INSERT/UPSERT) and verify the post
+  #     condition with a SELECT that errors via division-by-zero if the stored
+  #     hash isn't a valid bcrypt string. ON_ERROR_STOP=1 turns that into a
+  #     non-zero psql exit code so the deploy aborts loudly.
+  cat > "$sql_file" <<'PSQL'
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-  # Strategy 3: pgcrypto inside postgres container (requires pgcrypto extension)
-  if [[ -z "$ADMIN_HASH" ]]; then
-    ADMIN_HASH=$(docker exec "$pg_container" psql -U compliguard -d compliguard -tAq \
-      -c "SELECT crypt('$(echo "${ADMIN_PASSWORD}" | sed "s/'/''/g")', gen_salt('bf', 12));" 2>/dev/null | tr -d '[:space:]')
-  fi
+-- Pre-flight: confirm pgcrypto's bcrypt support is actually wired up.
+-- Errors here mean the postgres image is missing bcrypt and the deploy can't
+-- proceed; division-by-zero forces psql (with ON_ERROR_STOP=1) to exit != 0.
+SELECT 1 / CASE
+  WHEN crypt('probe', gen_salt('bf', 4)) ~ '^\$2[aby]\$' THEN 1
+  ELSE 0
+END AS pgcrypto_bcrypt_check;
 
-  # Worst-case: no hashing method available
-  if [[ -z "$ADMIN_HASH" ]] || [[ "$ADMIN_HASH" == *"Error"* ]]; then
-    badge err "Could not compute bcrypt hash via any method."
-    badge warn "Fix after deploy — run this on the server:"
-    badge warn "  HASH=\$(docker exec compliguard-app-1 node -e \"const b=require('/app/node_modules/bcryptjs');console.log(b.hashSync('YOUR_PASSWORD',12))\")"
-    badge warn "  docker exec compliguard-postgres-1 psql -U compliguard -d compliguard -c \"UPDATE users SET password_hash='\$HASH' WHERE email='${ADMIN_EMAIL}';\""
-    ADMIN_HASH="PLACEHOLDER_MUST_BE_REPLACED"
-  fi
-
-  # Insert or update admin user in users table
-  # Column names MUST match lib/db/schema/users.ts exactly:
-  #   first_name, last_name, password_hash, role, is_active (NO email_verified, NO name column)
-  local psql_output
-  psql_output=$(docker exec -i "$pg_container" psql -U compliguard -d compliguard 2>&1 <<PSQL
 INSERT INTO users (id, email, first_name, last_name, password_hash, role, is_active, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
-  '${ADMIN_EMAIL}',
+  :'admin_email',
   'Admin',
   'User',
-  '${ADMIN_HASH}',
+  crypt(:'admin_pw', gen_salt('bf', 12)),
   'super_admin',
   true,
   NOW(),
   NOW()
 )
 ON CONFLICT (email) DO UPDATE SET
-  password_hash = EXCLUDED.password_hash,
-  role = 'super_admin',
-  is_active = true,
-  updated_at = NOW();
-PSQL
-  )
+  password_hash = crypt(:'admin_pw', gen_salt('bf', 12)),
+  role          = 'super_admin',
+  is_active     = true,
+  updated_at    = NOW();
 
-  if echo "$psql_output" | grep -qiE 'ERROR|error'; then
-    badge warn "Admin injection warning: ${psql_output}"
-    badge warn "Manual fix: docker exec compliguard-postgres-1 psql -U compliguard -d compliguard -c \"SELECT email,role FROM users;\""
-  else
-    badge ok "Admin user ready: ${ADMIN_EMAIL}"
+-- Post-condition: must have exactly one matching row with a valid bcrypt hash.
+-- The CASE returns 0 (→ division-by-zero) if the stored hash is wrong; that
+-- makes psql exit non-zero and the deploy step aborts with the manual-recovery
+-- hints printed below.
+SELECT 1 / CASE
+  WHEN password_hash ~ '^\$2[aby]\$' AND length(password_hash) >= 60 THEN 1
+  ELSE 0
+END AS admin_hash_check
+FROM users WHERE email = :'admin_email';
+PSQL
+
+  local admin_inject_output
+  admin_inject_output=$(
+    docker exec -i \
+      -e PGOPTIONS=--client-min-messages=warning \
+      "$pg_container" \
+      psql -U compliguard -d compliguard \
+        --set=ON_ERROR_STOP=1 \
+        --set=admin_email="$ADMIN_EMAIL" \
+        --set=admin_pw="$ADMIN_PASSWORD" \
+        < "$sql_file" 2>&1
+  )
+  local admin_inject_rc=$?
+
+  if [[ $admin_inject_rc -ne 0 ]] || echo "$admin_inject_output" | grep -qiE '^ERROR|^psql:.*ERROR'; then
+    badge err "Admin account creation FAILED:"
+    echo "$admin_inject_output" | sed 's/^/    /' | head -20
+    badge err "The login API will return 'Invalid email or password' until this is fixed."
+    badge info "Manual recovery:"
+    badge info "  docker exec -i $pg_container psql -U compliguard -d compliguard <<EOF"
+    badge info "    CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+    badge info "    UPDATE users SET password_hash = crypt('<your-pw>', gen_salt('bf', 12))"
+    badge info "    WHERE email = '${ADMIN_EMAIL}';"
+    badge info "  EOF"
+    return 1
   fi
+  badge ok "Admin user ready: ${ADMIN_EMAIL} (bcrypt hash verified)"
 
   # ── Seed system_settings (mark setup as complete) ─────────────────────────────
   # Without this row, the app redirects every page to /setup/welcome on first run
