@@ -1,7 +1,13 @@
-'use client'
-
 import Link from 'next/link'
-import { Mail, HardDrive, Brain, Puzzle, Building2, Users, ChevronRight, CheckCircle, AlertCircle, Settings, MessageSquare, Satellite, Server } from 'lucide-react'
+import { redirect } from 'next/navigation'
+import {
+  Mail, HardDrive, Brain, Building2, Users, ChevronRight,
+  CheckCircle, AlertCircle, Settings,
+  Target, ShieldOff, Globe, FlaskConical, Server, Satellite,
+  GraduationCap, Users2, ShieldCheck, Key, Webhook, Plug, MessageSquare,
+} from 'lucide-react'
+import { getSession } from '@/lib/auth/jwt'
+import { ModuleToggles } from '@/components/settings/module-toggles'
 
 const SETTINGS_SECTIONS = [
   {
@@ -45,18 +51,18 @@ const SETTINGS_SECTIONS = [
     status: 'skipped' as const,
   },
   {
-    href: '/settings/integrations',
-    icon: Puzzle,
+    href: '/integrations',
+    icon: Plug,
     title: 'Integrations',
-    description: 'AWS, Azure, Microsoft 365, Jira, GitHub and cloud provider connections',
+    description: 'Connect third-party services, ITSM platforms, and cloud providers',
     color: '#06B6D4',
-    status: 'skipped' as const,
+    status: 'configured' as const,
   },
   {
     href: '/settings/teams-bot',
     icon: MessageSquare,
     title: 'Teams Bot',
-    description: 'Microsoft Teams Bot for real-time compliance alerts and status commands',
+    description: 'Microsoft Teams bot configuration and notification settings',
     color: '#8B5CF6',
     status: 'skipped' as const,
   },
@@ -64,13 +70,66 @@ const SETTINGS_SECTIONS = [
     href: '/settings/mcp',
     icon: Server,
     title: 'MCP Server',
-    description: 'Connect AI agents (Claude, OpenClaw) via Model Context Protocol — manage compliance through natural language',
+    description: 'Model Context Protocol server settings and tool configurations',
     color: '#06B6D4',
+    status: 'skipped' as const,
+  },
+  {
+    href: '/settings/openclaw',
+    icon: Satellite,
+    title: 'OpenClaw',
+    description: 'OpenClaw AI integration settings and API configuration',
+    color: '#10B981',
+    status: 'skipped' as const,
+  },
+  {
+    href: '/settings/roles',
+    icon: ShieldCheck,
+    title: 'Roles & Permissions',
+    description: 'Manage user roles and access control policies',
+    color: '#F59E0B',
     status: 'configured' as const,
+  },
+  {
+    href: '/settings/api-keys',
+    icon: Key,
+    title: 'API Keys',
+    description: 'Manage API keys for external integrations and automation',
+    color: '#EF4444',
+    status: 'skipped' as const,
+  },
+  {
+    href: '/settings/webhooks',
+    icon: Webhook,
+    title: 'Webhooks',
+    description: 'Configure outbound webhooks for event notifications',
+    color: '#8B5CF6',
+    status: 'skipped' as const,
   },
 ]
 
-export default function SettingsPage() {
+export default async function SettingsPage() {
+  const session = await getSession()
+  if (!session) redirect('/signin')
+
+  const isAdmin = ['super_admin', 'admin'].includes(session.role)
+
+  if (!isAdmin) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+        <div style={{ textAlign: 'center', padding: 40 }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>🔒</div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+            Access Restricted
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+            Settings are only available to administrators.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   const skippedCount = SETTINGS_SECTIONS.filter(s => s.status === 'skipped').length
 
   return (
@@ -86,7 +145,11 @@ export default function SettingsPage() {
           }}>
             <Settings size={18} color="#8B5CF6" />
           </div>
-          <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>
+          <h1 style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: 24, fontWeight: 700,
+            color: 'var(--text-primary)', letterSpacing: '-0.02em',
+          }}>
             Settings
           </h1>
         </div>
@@ -94,6 +157,43 @@ export default function SettingsPage() {
           Manage your platform configuration. You can update any settings skipped during setup at any time.
         </p>
       </div>
+
+      {/* ── SECTION 1: Platform Modules ── */}
+      <div style={{
+        marginBottom: 36,
+        padding: '24px 26px',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: 16,
+        backdropFilter: 'blur(20px)',
+      }}>
+        {/* Section header */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Target size={15} color="#8B5CF6" />
+            </div>
+            <h2 style={{
+              fontSize: 16, fontWeight: 700,
+              color: 'var(--text-primary)', margin: 0,
+            }}>
+              Platform Modules
+            </h2>
+          </div>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+            Enable or disable modules for your organization. Changes take effect immediately.
+          </p>
+        </div>
+
+        {/* Module toggle grid — client component */}
+        <ModuleToggles />
+      </div>
+
+      {/* ── SECTION 2: Settings navigation cards ── */}
 
       {/* Skipped banner */}
       {skippedCount > 0 && (
@@ -121,17 +221,7 @@ export default function SettingsPage() {
               borderRadius: 14, backdropFilter: 'blur(20px)',
               display: 'flex', alignItems: 'center', gap: 16,
               transition: 'all 0.2s', cursor: 'pointer',
-            }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.07)'
-                e.currentTarget.style.borderColor = `rgba(${section.color === '#8B5CF6' ? '139,92,246' : '6,182,212'},0.35)`
-                e.currentTarget.style.transform = 'translateX(2px)'
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
-                e.currentTarget.style.borderColor = section.status === 'skipped' ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.07)'
-                e.currentTarget.style.transform = 'none'
-              }}>
+            }}>
 
               {/* Icon */}
               <div style={{
@@ -145,7 +235,9 @@ export default function SettingsPage() {
               {/* Text */}
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{section.title}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {section.title}
+                  </span>
                   {section.status === 'skipped' ? (
                     <span style={{
                       fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
@@ -160,7 +252,9 @@ export default function SettingsPage() {
                     }}>Configured</span>
                   )}
                 </div>
-                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>{section.description}</p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                  {section.description}
+                </p>
               </div>
 
               {/* Arrow */}
@@ -177,8 +271,12 @@ export default function SettingsPage() {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
       }}>
         <div>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>Re-run Setup Wizard</p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Walk through the full guided setup again at any time</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 3 }}>
+            Re-run Setup Wizard
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            Walk through the full guided setup again at any time
+          </p>
         </div>
         <Link href="/setup/welcome" style={{
           fontSize: 13, fontWeight: 600, color: 'white', textDecoration: 'none',

@@ -7,11 +7,17 @@ import {
   ScrollText, ClipboardList, Users2, Search, UsersRound,
   BarChart3, Plug, Settings, ChevronLeft, ChevronRight, Menu, X,
   Zap, Library, Map, Upload, Bell, FileCheck, Eye, GitBranch, ShieldCheck, Sparkles, Brain, Calendar, FlaskConical, BookOpen, MessageSquare,
-  UserCheck, Monitor, Sword, Satellite, ShieldOff, Target, CloudLightning, Key, Webhook, GraduationCap, Server,
+  UserCheck, Monitor, Sword, Satellite, ShieldOff, Target, CloudLightning, Key, Webhook, GraduationCap, Server, Globe,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
-const NAV_GROUPS = [
+interface NavGroup {
+  label: string
+  adminOnly?: boolean
+  items: { href: string; label: string; icon: React.ElementType }[]
+}
+
+const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Overview',
     items: [
@@ -29,7 +35,9 @@ const NAV_GROUPS = [
       { href: '/policies',          label: 'Policies',         icon: ScrollText },
       { href: '/soa',               label: 'Statement of App', icon: FileCheck },
       { href: '/audit',             label: 'Auditor View',     icon: Eye },
-      { href: '/pentest',            label: 'Pen Testing',      icon: Target },
+      { href: '/pentest',           label: 'Pen Testing',      icon: Target },
+      { href: '/firewall-audit',    label: 'Firewall Audit',   icon: ShieldOff },
+      { href: '/dns-audit',         label: 'DNS Audit',        icon: Globe },
     ],
   },
   {
@@ -80,17 +88,18 @@ const NAV_GROUPS = [
     ],
   },
   {
-    label: 'Platform',
+    label: 'Settings',
+    adminOnly: true,
     items: [
-      { href: '/integrations',          label: 'Integrations', icon: Plug },
-      { href: '/integrations/nl-tests', label: 'NL Tests',     icon: FlaskConical },
-      { href: '/settings',              label: 'Settings',     icon: Settings },
-      { href: '/settings/roles',        label: 'Roles',        icon: ShieldCheck },
-      { href: '/settings/api-keys',    label: 'API Keys',     icon: Key },
-      { href: '/settings/webhooks',    label: 'Webhooks',     icon: Webhook },
-      { href: '/settings/teams-bot',   label: 'Teams Bot',    icon: MessageSquare },
-      { href: '/settings/mcp',         label: 'MCP Server',   icon: Server },
-      { href: '/settings/openclaw',      label: 'OpenClaw',     icon: Satellite },
+      { href: '/integrations',          label: 'Integrations',  icon: Plug },
+      { href: '/integrations/nl-tests', label: 'NL Tests',      icon: FlaskConical },
+      { href: '/settings',              label: 'Settings',      icon: Settings },
+      { href: '/settings/roles',        label: 'Roles',         icon: ShieldCheck },
+      { href: '/settings/api-keys',     label: 'API Keys',      icon: Key },
+      { href: '/settings/webhooks',     label: 'Webhooks',      icon: Webhook },
+      { href: '/settings/teams-bot',    label: 'Teams Bot',     icon: MessageSquare },
+      { href: '/settings/mcp',          label: 'MCP Server',    icon: Server },
+      { href: '/settings/openclaw',     label: 'OpenClaw',      icon: Satellite },
     ],
   },
 ]
@@ -119,6 +128,11 @@ export function DashboardSidebar({ role }: SidebarProps) {
     href === '/dashboard'
       ? pathname === '/dashboard'
       : pathname === href || pathname.startsWith(href + '/')
+
+  const visibleGroups = NAV_GROUPS.filter(g => {
+    if (g.adminOnly) return ['super_admin', 'admin'].includes(role)
+    return true
+  })
 
   const sidebarContent = (
     <aside
@@ -190,7 +204,7 @@ export function DashboardSidebar({ role }: SidebarProps) {
 
       {/* Nav */}
       <nav style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', padding: '8px 8px' }}>
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label}>
             {/* Section label — only when expanded */}
             {(!collapsed || isMobile) && (
@@ -225,41 +239,6 @@ export function DashboardSidebar({ role }: SidebarProps) {
           </div>
         ))}
       </nav>
-
-      {/* AI badge — only when expanded */}
-      {(!collapsed || isMobile) && (
-        <div style={{ padding: '10px 8px', borderTop: '1px solid var(--border-glass)', flexShrink: 0 }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '9px 12px',
-            background: 'var(--violet-dim)',
-            border: '1px solid rgba(139,92,246,0.25)',
-            borderRadius: 'var(--radius-md)',
-          }}>
-            <Zap size={13} style={{ color: 'var(--violet)', flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--violet)' }}>AI Mapping Active</div>
-              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Controls engine running</div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Collapse toggle — desktop only */}
-      {!isMobile && (
-        <div style={{ padding: '8px', borderTop: '1px solid var(--border-glass)', flexShrink: 0 }}>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="btn-icon"
-            style={{ width: '100%' }}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {collapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
-          </button>
-        </div>
-      )}
     </aside>
   )
 
@@ -295,7 +274,39 @@ export function DashboardSidebar({ role }: SidebarProps) {
           </button>
         </>
       )}
-      {!isMobile && sidebarContent}
+
+      {/* Desktop only — floating toggle at right edge of sidebar */}
+      {!isMobile && (
+        <div style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+          {sidebarContent}
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            style={{
+              position: 'absolute',
+              right: -12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: '#1e1e2e',
+              border: '1px solid rgba(255,255,255,0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 10,
+              color: 'rgba(255,255,255,0.7)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+            }}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {collapsed ? <ChevronRight size={12} /> : <ChevronLeft size={12} />}
+          </button>
+        </div>
+      )}
     </>
   )
 }
