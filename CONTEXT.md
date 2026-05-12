@@ -1445,3 +1445,65 @@ b7f4223 fix(csp): allow unsafe-eval in dev mode for React/Turbopack hot reload
 - **Migrations**: Apply with `sed 's/--> statement-breakpoint//g' migration.sql | docker exec -i <pg_container> psql -U compliguard -d compliguard`
 - **JSX onClick**: Never use `if/else` inline in JSX event handlers with TypeScript casts — use ternary
 - **`integration_type` enum**: If adding new ITSM platforms, use `DO $$ BEGIN ALTER TYPE ... ADD VALUE ... EXCEPTION WHEN duplicate_object THEN null; END $$` — never drop/recreate the enum
+
+---
+
+## Session: 2026-05-12 (cont.) — Firewall Audit, DNS Audit, Sidebar Redesign, Settings Refactor
+
+### 10.1 New Modules Added (Migration 0004, Commit 1cf614f)
+
+**Firewall Audit** (`/firewall-audit`)
+- Tables: `firewall_audits`, `firewall_findings`, `firewall_evidence`, `firewall_comments`
+- Audit types: perimeter, internal, cloud, waf, ngfw, other
+- Tracks: rule ID, affected device, affected zone, CVSS, severity, status, assignee, evidence, comments
+- API: 7 routes (audits CRUD, findings CRUD, evidence, comments, stats)
+- UI: audit list, audit detail with findings table, finding-drawer (Details/Evidence/Comments tabs)
+
+**DNS Audit** (`/dns-audit`)
+- Tables: `dns_audits`, `dns_issues`, `dns_evidence`, `dns_comments`
+- Audit types: external, internal, both
+- Issue types: misconfiguration, dangling_record, missing_spf, missing_dmarc, missing_dkim, zone_transfer, subdomain_takeover, cache_poisoning, wildcard_record, other
+- Tracks: affected record, record type, current value, expected value, risk details, remediation
+- API: 7 routes (audits CRUD, issues CRUD + ?issueType= filter, evidence, comments, stats with byType breakdown)
+- UI: audit list, audit detail, issue-drawer (Details show current/expected in monospace)
+
+**Module Config** (`module_config` table)
+- Per-org jsonb toggle for all 9 modules: pentest, firewallAudit, dnsAudit, nlTests, mcpServer, openClaw, teamsBot, training, vendors
+- API: GET /api/settings/modules (defaults all true), PATCH (admin-only)
+- UI: `components/settings/module-toggles.tsx` — live toggle switches with optimistic updates
+
+### 10.2 Sidebar Redesign (Commit 1cf614f)
+
+Changes to `components/dashboard/sidebar.tsx`:
+- **Removed**: "AI Mapping Active" violet card at bottom left
+- **Removed**: Old inline collapse button at very bottom
+- **Added**: Floating 24px circle button at sidebar/content intersection (`position: absolute, right: -12, top: 50%, transform: translateY(-50%)`). Shows `<` to collapse, `>` to expand.
+- **Renamed**: "Platform" section → "Settings", marked `adminOnly: true`
+- **Role filter**: `visibleGroups = NAV_GROUPS.filter(g => !g.adminOnly || ['super_admin','admin'].includes(role))` — non-admins never see Settings group
+- **Added to Compliance**: Firewall Audit (`/firewall-audit`, ShieldOff icon) and DNS Audit (`/dns-audit`, Globe icon)
+
+### 10.3 Settings Page Refactor (Commit 1cf614f)
+
+- `app/(dashboard)/settings/layout.tsx` — NEW: guards all /settings/** routes. Non-admin roles see "Access Restricted" card instead of content.
+- `app/(dashboard)/settings/page.tsx` — Rewritten as async Server Component:
+  - Section 1 (top): Platform Modules with `<ModuleToggles />` client component
+  - Section 2: All original settings cards + new cards for Integrations, Teams Bot, MCP Server, OpenClaw, Roles, API Keys, Webhooks
+
+### 10.4 Mac Dev Deployment Pattern (established)
+
+For all future sessions, when code is committed to GitHub:
+1. Create tar archive of changed files: `tar -czf /tmp/update.tar.gz <files>`
+2. `pc push /tmp/update.tar.gz /tmp/update.tar.gz`
+3. `pc bash "rm -rf /tmp/cg-update && mkdir /tmp/cg-update && tar -xzf /tmp/update.tar.gz -C /tmp/cg-update && rsync -a --no-perms /tmp/cg-update/ /tmp/cg-app/"`
+4. Write migration script to `/tmp/cg-migrate-NNN.sh`, `pc push` it, tell user to run it in Terminal
+5. Dev server at `/tmp/cg-app` hot-reloads changed files automatically
+
+### 10.5 Commit Log
+
+```
+1cf614f feat: Firewall Audit + DNS Audit modules + Settings refactor + Sidebar redesign
+b6c8eac docs: CONTEXT.md — session 2026-05-12 (Mac dev setup, pentest module, bug fixes)
+d1b4caf fix(pentest): replace if-else with ternary in import-wizard onClick (parser error)
+65147a3 feat: Penetration Testing module — engagements, issues, ITSM integration, Excel import
+b7f4223 fix(csp): allow unsafe-eval in dev mode for React/Turbopack hot reload
+```
