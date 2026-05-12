@@ -140,7 +140,7 @@ export function ModuleToggles() {
       const res = await fetch('/api/settings/modules', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ modules: { [key]: newValue } }),
+        body: JSON.stringify({ [key]: newValue }),
       })
       if (!res.ok) throw new Error('Failed')
       setFeedback(prev => ({ ...prev, [key]: 'ok' }))

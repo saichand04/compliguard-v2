@@ -14,7 +14,8 @@ import { useState, useEffect } from 'react'
 interface NavGroup {
   label: string
   adminOnly?: boolean
-  items: { href: string; label: string; icon: React.ElementType }[]
+  moduleKey?: string   // if set, hide group when that module is disabled
+  items: { href: string; label: string; icon: React.ElementType; moduleKey?: string }[]
 }
 
 const NAV_GROUPS: NavGroup[] = [
@@ -35,9 +36,9 @@ const NAV_GROUPS: NavGroup[] = [
       { href: '/policies',          label: 'Policies',         icon: ScrollText },
       { href: '/soa',               label: 'Statement of App', icon: FileCheck },
       { href: '/audit',             label: 'Auditor View',     icon: Eye },
-      { href: '/pentest',           label: 'Pen Testing',      icon: Target },
-      { href: '/firewall-audit',    label: 'Firewall Audit',   icon: ShieldOff },
-      { href: '/dns-audit',         label: 'DNS Audit',        icon: Globe },
+      { href: '/pentest',           label: 'Pen Testing',      icon: Target,    moduleKey: 'pentest' },
+      { href: '/firewall-audit',    label: 'Firewall Audit',   icon: ShieldOff, moduleKey: 'firewallAudit' },
+      { href: '/dns-audit',         label: 'DNS Audit',        icon: Globe,     moduleKey: 'dnsAudit' },
     ],
   },
   {
@@ -59,10 +60,10 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Organization',
     items: [
-      { href: '/vendors',   label: 'Vendors',    icon: Users2 },
+      { href: '/vendors',   label: 'Vendors',    icon: Users2,       moduleKey: 'vendors' },
       { href: '/people',    label: 'People',     icon: UsersRound },
       { href: '/org-chart', label: 'Org Chart',  icon: GitBranch },
-      { href: '/training',  label: 'Training',   icon: GraduationCap },
+      { href: '/training',  label: 'Training',   icon: GraduationCap, moduleKey: 'training' },
     ],
   },
 
@@ -88,21 +89,38 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // Bug 2 fix: single Settings entry instead of all sub-items
     label: 'Settings',
     adminOnly: true,
     items: [
-      { href: '/integrations',          label: 'Integrations',  icon: Plug },
-      { href: '/integrations/nl-tests', label: 'NL Tests',      icon: FlaskConical },
-      { href: '/settings',              label: 'Settings',      icon: Settings },
-      { href: '/settings/roles',        label: 'Roles',         icon: ShieldCheck },
-      { href: '/settings/api-keys',     label: 'API Keys',      icon: Key },
-      { href: '/settings/webhooks',     label: 'Webhooks',      icon: Webhook },
-      { href: '/settings/teams-bot',    label: 'Teams Bot',     icon: MessageSquare },
-      { href: '/settings/mcp',          label: 'MCP Server',    icon: Server },
-      { href: '/settings/openclaw',     label: 'OpenClaw',      icon: Satellite },
+      { href: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ]
+
+interface ModuleConfig {
+  pentest: boolean
+  firewallAudit: boolean
+  dnsAudit: boolean
+  nlTests: boolean
+  mcpServer: boolean
+  openClaw: boolean
+  teamsBot: boolean
+  training: boolean
+  vendors: boolean
+}
+
+const DEFAULT_MODULES: ModuleConfig = {
+  pentest: true,
+  firewallAudit: true,
+  dnsAudit: true,
+  nlTests: true,
+  mcpServer: true,
+  openClaw: true,
+  teamsBot: true,
+  training: true,
+  vendors: true,
+}
 
 interface SidebarProps {
   role: string
@@ -113,6 +131,8 @@ export function DashboardSidebar({ role }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  // Bug 1 fix: track enabled modules in sidebar state
+  const [enabledModules, setEnabledModules] = useState<ModuleConfig>(DEFAULT_MODULES)
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768)
@@ -124,15 +144,42 @@ export function DashboardSidebar({ role }: SidebarProps) {
   // Close mobile sidebar on route change
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
+  // Bug 1 fix: fetch module config on mount (and re-fetch when settings page navigated away from)
+  useEffect(() => {
+    async function loadModules() {
+      try {
+        const res = await fetch('/api/settings/modules')
+        if (res.ok) {
+          const data = await res.json()
+          setEnabledModules({ ...DEFAULT_MODULES, ...(data.modules ?? {}) })
+        }
+      } catch {
+        // keep defaults on error
+      }
+    }
+    loadModules()
+  }, [pathname]) // re-fetch when route changes so toggling in Settings reflects immediately
+
   const isActive = (href: string) =>
     href === '/dashboard'
       ? pathname === '/dashboard'
       : pathname === href || pathname.startsWith(href + '/')
 
-  const visibleGroups = NAV_GROUPS.filter(g => {
-    if (g.adminOnly) return ['super_admin', 'admin'].includes(role)
-    return true
-  })
+  const visibleGroups = NAV_GROUPS
+    .filter(g => {
+      if (g.adminOnly) return ['super_admin', 'admin'].includes(role)
+      return true
+    })
+    .map(g => ({
+      ...g,
+      // Bug 1 fix: filter out items whose moduleKey is disabled
+      items: g.items.filter(item => {
+        if (!item.moduleKey) return true
+        return enabledModules[item.moduleKey as keyof ModuleConfig] !== false
+      }),
+    }))
+    // remove groups with no items left (except Settings which always shows)
+    .filter(g => g.items.length > 0)
 
   const sidebarContent = (
     <aside
@@ -275,16 +322,17 @@ export function DashboardSidebar({ role }: SidebarProps) {
         </>
       )}
 
-      {/* Desktop only — floating toggle at right edge of sidebar */}
+      {/* Desktop only — floating toggle at right edge of sidebar, aligned with header */}
       {!isMobile && (
         <div style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
           {sidebarContent}
+          {/* Bug 3 fix: position at header height (56px / 2 = 28px from top) */}
           <button
             onClick={() => setCollapsed(!collapsed)}
             style={{
               position: 'absolute',
               right: -12,
-              top: '50%',
+              top: 28,
               transform: 'translateY(-50%)',
               width: 24,
               height: 24,
