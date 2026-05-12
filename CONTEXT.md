@@ -1301,3 +1301,147 @@ After the initial Phase 8 push, a real fresh-snapshot deployment surfaced two ca
 - Never write `2>&1` capture + a narrow `grep -E '^ERROR'` filter together as the only way you decide if an operation succeeded. Either check the exit code, or use a broader pattern that catches Docker's literal `"invalid container name or ID: value is empty"` style messages.
 - The script's "success" badge for each migration is decorative — the actual gate is exit code + post-condition checks (e.g. the pgcrypto block now does `SELECT 1 / CASE WHEN password_hash ~ '^\$2[aby]\$' THEN 1 ELSE 0 END` to force a non-zero exit if the stored hash isn't a valid bcrypt string).
 
+
+---
+
+## Session: 2026-05-12 — Dashboard Enhancements + Mac Dev Setup + Penetration Testing Module
+
+### 9.1 Mac Dev Environment Setup
+
+**Problem:** Mac dev environment (`~/Documents/compliguard-v2`) had old code with no git repo. `pc bash` sandbox restricts writes to `~/Documents` and blocks Docker socket access. Multiple approaches attempted:
+- `tar` extract → blocked by sandbox (can't unlink existing files)
+- `rsync` → same sandbox restriction  
+- `git clone` in `pc bash` → no internet access from sandbox
+- SSH from cloud sandbox → Mac on local network, not reachable
+
+**Solution that worked:**
+1. Extract full repo archive to `/tmp/cg-app` (writable) via `tar -xzf` in `pc bash`
+2. Run dev server from `/tmp/cg-app` (not `~/Documents`)
+3. Use `pc push <sandbox-path> <mac-path>` for individual file updates (bypasses sandbox restriction)
+4. Docker containers managed by running scripts from user's Terminal (docker not accessible from `pc bash` due to macOS TCC)
+
+**Mac Dev Environment:**
+- App root: `/tmp/cg-app`
+- Dev server: `nohup npm run dev > /tmp/cg-dev.log 2>&1 &`  
+- URL: `http://localhost:3030`
+- Postgres: `compliguard-postgres` container on port 5433 (existing, reused)
+- Redis: `cg-redis-dev` container on port 6380
+- `.env.local` at `/tmp/cg-app/.env.local`
+- Dev log: `/tmp/cg-dev.log`
+
+**Key constraint for future agents:** When deploying to Mac dev:
+- Always push files via `pc push <sandbox-abs-path> <mac-abs-path>`
+- Always extract archives to `/tmp/`, never to `~/Documents/`
+- Docker operations must be done via scripts pushed to `/tmp/` that the user runs in Terminal
+- Migrations: push script to `/tmp/cg-migrate-NNN.sh`, user runs it in Terminal
+
+### 9.2 Bugs Fixed (Session 2026-05-12)
+
+**Bug: `eval() not supported` on landing page**
+- Cause: CSP header missing `'unsafe-eval'` — React dev mode (Turbopack) needs it for hot reload
+- Fix: `next.config.mjs` — conditional CSP based on `NODE_ENV`:
+  - Dev: `script-src 'self' 'unsafe-inline' 'unsafe-eval'` + `connect-src 'self' ws: wss:`
+  - Prod: `script-src 'self' 'unsafe-inline'` (no eval)
+- Commit: `b7f4223`
+
+**Bug: `Module not found: Can't resolve './teams-status-widget'`**
+- Cause: `right-panel-manager.tsx` imports `teams-status-widget.tsx` and `xdr-ticker.tsx` — these weren't included in the Mac update archive
+- Fix: `pc push` both files to `/tmp/cg-app/components/dashboard/`
+- Lesson: Always include ALL dashboard component files when syncing, not just changed ones
+
+**Bug: `Expected '</>', got 'else'` in `components/pentest/import-wizard.tsx` line 524**
+- Cause: `if (step > 1) setStep((step - 1) as Step) else onClose()` — inline if/else with TypeScript `as` cast is invalid syntax in JSX `onClick`
+- Fix: Replace with ternary: `step > 1 ? setStep((step - 1) as Step) : onClose()`
+- Commit: `d1b4caf`
+
+### 9.3 Dashboard Enhancements (Commit 555a16c)
+
+Added to dashboard top row:
+- **Common Controls card** — shows controls shared across frameworks (with overlap %)
+- **Unique Controls card** — shows controls exclusive to one framework (with unique %)
+
+Right panel changes:
+- Removed XDR Live Feed from default visible widgets
+- Added chicklet widget picker (user can show/hide: Mapping Engine, Activity, My Tasks, Teams Bot, XDR Live Feed)
+- Preferences persisted in `localStorage` under `cg_right_panel_widgets`
+- Quick Actions section moved below Framework Progress
+- Integrations card removed from bottom
+
+### 9.4 Penetration Testing Module (Commits 65147a3, d1b4caf)
+
+Full module added to CompliGuard. 28 new/modified files, 5,249 lines.
+
+**Database (migration 0003):**
+- `pentest_engagements` — pentest project tracker (vendor, type, scope, dates, status)
+- `pentest_issues` — individual findings (severity, status, CVSS, ITSM link, assignee)
+- `pentest_evidence` — file attachments per issue
+- `pentest_comments` — internal + ITSM-synced comments
+- 4 new enums: `pentest_severity`, `pentest_status`, `pentest_engagement_status`, `itsm_platform`
+- `integration_type` enum extended: added `servicenow`, `azure_devops`, `linear`, `freshservice`
+
+**API routes (11 new):**
+- `GET/POST /api/pentest/engagements` — list with stats, create
+- `GET/PATCH/DELETE /api/pentest/engagements/[id]` — detail + issues
+- `POST /api/pentest/engagements/[id]/import` — xlsx/csv bulk import
+- `GET/POST /api/pentest/issues` — list (filter by severity/status/assignee), create
+- `GET/PATCH/DELETE /api/pentest/issues/[id]`
+- `GET/POST /api/pentest/issues/[id]/evidence` — file upload
+- `DELETE /api/pentest/issues/[id]/evidence/[evidenceId]`
+- `GET/POST /api/pentest/issues/[id]/comments`
+- `POST/PATCH/DELETE /api/pentest/issues/[id]/itsm-link` — link ticket
+- `POST /api/pentest/issues/[id]/itsm-sync` — pull live ticket data + comments
+- `GET /api/pentest/stats` — aggregate counts by status/severity
+
+**Libraries:**
+- `lib/pentest/itsm-client.ts` — normalized ITSM client for JIRA, ServiceNow, Azure DevOps, Linear, Freshservice; all outbound via SSRF guard
+- `lib/pentest/xlsx-parser.ts` — auto-detect columns (case-insensitive), P1–P5 severity normalization, bulk parse
+
+**UI pages/components:**
+- `/pentest` — engagements list with stats row, filters, import button
+- `/pentest/[id]` — engagement detail with issue table (severity dots, CVSS, ITSM icons)
+- `components/pentest/issue-drawer.tsx` — right drawer, 4 tabs: Details / Evidence (drag-drop) / ITSM (link+sync+comments) / Comments
+- `components/pentest/import-wizard.tsx` — 4-step wizard: Upload → Column mapping → Preview → Import progress
+- `components/pentest/new-engagement-dialog.tsx` — create engagement form
+- `components/pentest/new-issue-dialog.tsx` — create issue manually
+
+**Dashboard:**
+- New "Pentest Issues" stat card (5th card) — pulls live data from DB (total / open / critical)
+- `getPentestStats(orgId)` server function queries `pentest_issues` directly
+
+**Sidebar:**
+- "Pen Testing" moved from Security group → Compliance group (after Auditor View)
+
+**Integrations page:**
+- ITSM section added: JIRA, ServiceNow, Azure DevOps, Linear, Freshservice config cards
+- Platform-specific credential fields (API token, instance URL, PAT, etc.)
+
+**ITSM Integration Flow:**
+1. Configure ITSM platform in `/integrations` (credentials stored encrypted)
+2. On issue, go to ITSM tab → enter ticket URL + ticket ID → Link
+3. "Sync Now" button fetches live ticket status, assignee, comments from ITSM API
+4. ITSM comments appear in Comments tab with platform badge
+
+**Excel Import Flow:**
+1. Create engagement → "Import Issues" button
+2. Upload `.xlsx` or `.csv` pentest report
+3. Auto-detect columns (Title, Severity, Description, Steps, Remediation, CVSS, Asset)
+4. Preview parsed issues with warnings (empty titles skipped, unknown severities defaulted to medium)
+5. Confirm → bulk create issues in DB
+
+### 9.5 Commit Log (Session 2026-05-12)
+
+```
+d1b4caf fix(pentest): replace if-else with ternary in import-wizard onClick (parser error)
+65147a3 feat: Penetration Testing module — engagements, issues, ITSM integration, Excel import
+b7f4223 fix(csp): allow unsafe-eval in dev mode for React/Turbopack hot reload
+555a16c feat: dashboard — Common/Unique Controls cards + right panel widget manager
+```
+
+### 9.6 Rules for Future Agents
+
+- **Mac dev deploys**: Push changed files via `pc push`, extract new archives to `/tmp/`, use user's Terminal for Docker ops
+- **New pentest routes**: Always include `and(eq(table.organizationId, session.orgId), ...)` in all queries — never query by ID alone
+- **ITSM fetches**: Always use `safeFetch()` from `lib/security/ssrf-guard.ts` — never raw `fetch()` to user-supplied URLs
+- **Migrations**: Apply with `sed 's/--> statement-breakpoint//g' migration.sql | docker exec -i <pg_container> psql -U compliguard -d compliguard`
+- **JSX onClick**: Never use `if/else` inline in JSX event handlers with TypeScript casts — use ternary
+- **`integration_type` enum**: If adding new ITSM platforms, use `DO $$ BEGIN ALTER TYPE ... ADD VALUE ... EXCEPTION WHEN duplicate_object THEN null; END $$` — never drop/recreate the enum
