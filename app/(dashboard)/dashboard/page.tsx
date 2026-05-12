@@ -4,15 +4,32 @@ import { FrameworkProgressCard } from '@/components/dashboard/framework-progress
 import { DraggableStatsGrid } from '@/components/dashboard/draggable-stats-grid'
 import { ControlsOverlapCards } from '@/components/dashboard/controls-overlap-cards'
 import { RightPanelManager } from '@/components/dashboard/right-panel-manager'
+import { db } from '@/lib/db'
+import { pentestIssues } from '@/lib/db/schema'
+import { eq, sql, count } from 'drizzle-orm'
 import {
   Shield, FileText, AlertTriangle, Link2, ArrowRight, ChevronRight,
 } from 'lucide-react'
 
 export const dynamic = 'force-dynamic'
 
+async function getPentestStats(orgId: string) {
+  try {
+    const [stats] = await db
+      .select({
+        total: count(),
+        open: sql<number>`count(*) filter (where ${pentestIssues.status} = 'open')`,
+        critical: sql<number>`count(*) filter (where ${pentestIssues.severity} = 'critical')`,
+      })
+      .from(pentestIssues)
+      .where(eq(pentestIssues.organizationId, orgId))
+    return { total: Number(stats?.total ?? 0), open: Number(stats?.open ?? 0), critical: Number(stats?.critical ?? 0) }
+  } catch { return { total: 0, open: 0, critical: 0 } }
+}
+
 // ── Demo data — replace with real DB queries ──────────────────────────────────
 
-const STATS = [
+const BASE_STATS = [
   { title: 'Compliance Score',  value: '84%',   subtitle: 'Across all frameworks',  trend: { value: 3.2,  label: 'vs last month' }, iconName: 'TrendingUp',    accentColor: 'violet'  as const },
   { title: 'Active Controls',   value: '1,247', subtitle: '312 need evidence',       trend: { value: 1.8,  label: 'vs last week'  }, iconName: 'CheckSquare',   accentColor: 'cyan'    as const },
   { title: 'Open Risks',        value: '23',    subtitle: '5 critical, 18 medium',  trend: { value: -2,   label: 'vs last week'  }, iconName: 'AlertTriangle', accentColor: 'amber'   as const },
@@ -54,6 +71,20 @@ export default async function DashboardPage() {
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'
+
+  // Live pentest stats
+  const pt = await getPentestStats(session.orgId ?? '')
+  const STATS = [
+    ...BASE_STATS,
+    {
+      title: 'Pentest Issues',
+      value: String(pt.total),
+      subtitle: `${pt.open} open · ${pt.critical} critical`,
+      trend: { value: pt.open, label: pt.open > 0 ? 'need attention' : 'all clear' },
+      iconName: 'Target',
+      accentColor: 'rose' as const,
+    },
+  ]
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>

@@ -13,6 +13,10 @@ export const integrationTypeEnum = pgEnum('integration_type', [
   'slack',
   'jira',
   'vercel',
+  'servicenow',
+  'azure_devops',
+  'linear',
+  'freshservice',
 ])
 
 export const integrationStatusEnum = pgEnum('integration_status', ['active', 'inactive', 'error', 'pending'])

@@ -29,6 +29,7 @@ const NAV_GROUPS = [
       { href: '/policies',          label: 'Policies',         icon: ScrollText },
       { href: '/soa',               label: 'Statement of App', icon: FileCheck },
       { href: '/audit',             label: 'Auditor View',     icon: Eye },
+      { href: '/pentest',            label: 'Pen Testing',      icon: Target },
     ],
   },
   {
@@ -56,12 +57,7 @@ const NAV_GROUPS = [
       { href: '/training',  label: 'Training',   icon: GraduationCap },
     ],
   },
-  {
-    label: 'Security',
-    items: [
-      { href: '/pentest', label: 'Pen Testing', icon: ShieldCheck },
-    ],
-  },
+
   {
     label: 'AI',
     items: [

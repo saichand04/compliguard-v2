@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { StatsCard } from './stats-card'
-import { TrendingUp, CheckSquare, AlertTriangle, FileText, Shield, BarChart3, Activity, Zap, type LucideIcon } from 'lucide-react'
+import { TrendingUp, CheckSquare, AlertTriangle, FileText, Shield, BarChart3, Activity, Zap, Target, type LucideIcon } from 'lucide-react'
 
 // Icon registry — maps string names sent from server to actual components
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -14,6 +14,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   BarChart3,
   Activity,
   Zap,
+  Target,
 }
 
 export interface StatItem {

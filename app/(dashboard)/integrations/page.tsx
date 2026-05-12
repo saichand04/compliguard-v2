@@ -5,7 +5,8 @@ import {
   Plug, Cloud, Code2, ShieldCheck, AlertTriangle, CheckCircle2,
   Clock, RefreshCw, ChevronRight, Activity, Zap, Server,
   MessageSquare, Ticket, Building2, Lock, Wifi, WifiOff,
-  FlaskConical, Calendar, ChevronDown, Loader2,
+  FlaskConical, Calendar, ChevronDown, Loader2, Target, Link2,
+  Eye, EyeOff,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -413,6 +414,247 @@ function IntegrationCard({
   )
 }
 
+
+// ── ITSM Platforms section ────────────────────────────────────────────
+
+interface ItsmConfig {
+  baseUrl: string
+  username: string
+  password: string
+  project: string
+  pat: string
+}
+
+const ITSM_PLATFORMS_CONFIG = [
+  {
+    type: 'jira',
+    name: 'JIRA',
+    color: '#0052CC',
+    description: 'Link pentest issues to JIRA tickets for remediation tracking and workflow automation.',
+    fields: [
+      { key: 'baseUrl',  label: 'Base URL',  placeholder: 'https://yourcompany.atlassian.net', type: 'url' },
+      { key: 'username', label: 'Email',     placeholder: 'user@company.com', type: 'email' },
+      { key: 'password', label: 'API Token', placeholder: 'ATATT3xFfGF0...', type: 'password' },
+    ],
+  },
+  {
+    type: 'servicenow',
+    name: 'ServiceNow',
+    color: '#81B5A1',
+    description: 'Sync findings with ServiceNow incidents and change management workflows.',
+    fields: [
+      { key: 'baseUrl',  label: 'Instance URL', placeholder: 'https://yourinstance.service-now.com', type: 'url' },
+      { key: 'username', label: 'Username',      placeholder: 'admin', type: 'text' },
+      { key: 'password', label: 'Password',      placeholder: '••••••••', type: 'password' },
+    ],
+  },
+  {
+    type: 'azure_devops',
+    name: 'Azure DevOps',
+    color: '#0078D4',
+    description: 'Create work items in Azure DevOps Boards for pentest finding remediation.',
+    fields: [
+      { key: 'baseUrl',  label: 'Org URL',      placeholder: 'https://dev.azure.com/yourorg', type: 'url' },
+      { key: 'password', label: 'PAT Token',    placeholder: 'Personal access token', type: 'password' },
+      { key: 'project',  label: 'Project Name', placeholder: 'MyProject', type: 'text' },
+    ],
+  },
+  {
+    type: 'linear',
+    name: 'Linear',
+    color: '#5B50D6',
+    description: 'Sync pentest issues with Linear projects for agile remediation workflows.',
+    fields: [
+      { key: 'password', label: 'API Key', placeholder: 'lin_api_...', type: 'password' },
+    ],
+  },
+  {
+    type: 'freshservice',
+    name: 'Freshservice',
+    color: '#0D9F60',
+    description: 'Create Freshservice tickets for pentest findings and track SLA compliance.',
+    fields: [
+      { key: 'baseUrl',  label: 'Domain',  placeholder: 'https://yourcompany.freshservice.com', type: 'url' },
+      { key: 'password', label: 'API Key', placeholder: 'your-api-key', type: 'password' },
+    ],
+  },
+]
+
+function ItsmPlatformCard({ platform }: { platform: typeof ITSM_PLATFORMS_CONFIG[0] }) {
+  const [connected, setConnected] = useState(false)
+  const [lastSync, setLastSync] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [showPasswords, setShowPasswords] = useState<Record<string, boolean>>({})
+  const [config, setConfig] = useState<Partial<ItsmConfig>>({ baseUrl: '', username: '', password: '', project: '', pat: '' })
+
+  function setField(key: string, value: string) {
+    setConfig(prev => ({ ...prev, [key]: value }))
+  }
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/integrations/itsm/${platform.type}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      })
+      if (res.ok) {
+        setConnected(true)
+        setLastSync(new Date().toISOString())
+        setExpanded(false)
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDisconnect() {
+    try {
+      await fetch(`/api/integrations/itsm/${platform.type}`, { method: 'DELETE' })
+      setConnected(false)
+      setLastSync(null)
+      setConfig({ baseUrl: '', username: '', password: '', project: '', pat: '' })
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.04)',
+      border: `1px solid ${connected ? `${platform.color}35` : 'rgba(255,255,255,0.08)'}`,
+      borderRadius: 12, overflow: 'hidden', transition: 'border-color 0.2s',
+      position: 'relative',
+    }}>
+      {connected && (
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, background: `linear-gradient(90deg, transparent, ${platform.color}, transparent)` }} />
+      )}
+
+      <div style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: `${platform.color}18`, border: `1px solid ${platform.color}30`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            <Link2 size={18} color={platform.color} />
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>{platform.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+              {connected
+                ? lastSync ? `Last sync: ${new Date(lastSync).toLocaleString()}` : 'Connected'
+                : platform.description.slice(0, 55) + '…'
+              }
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {connected ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: '#10B981', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 20, padding: '2px 8px' }}>
+              <Wifi size={10} /> CONNECTED
+            </span>
+          ) : (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--text-muted)', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 20, padding: '2px 8px' }}>
+              <WifiOff size={10} /> NOT CONNECTED
+            </span>
+          )}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, fontSize: 12.5, fontWeight: 500, background: connected ? `${platform.color}12` : 'rgba(255,255,255,0.06)', border: `1px solid ${connected ? `${platform.color}30` : 'rgba(255,255,255,0.1)'}`, color: connected ? platform.color : 'var(--text-secondary)', cursor: 'pointer' }}
+          >
+            {connected ? 'Configure' : 'Connect'} <ChevronRight size={12} />
+          </button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div style={{ padding: '0 20px 20px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+          <p style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.5, margin: '14px 0 16px' }}>{platform.description}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {platform.fields.map(field => (
+              <div key={field.key}>
+                <label style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', display: 'block', marginBottom: 5 }}>{field.label}</label>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={field.type === 'password' && !showPasswords[field.key] ? 'password' : field.type === 'password' ? 'text' : field.type}
+                    value={(config as Record<string, string>)[field.key] ?? ''}
+                    onChange={e => setField(field.key, e.target.value)}
+                    placeholder={field.placeholder}
+                    style={{
+                      width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+                      borderRadius: 8, padding: field.type === 'password' ? '9px 36px 9px 12px' : '9px 12px',
+                      fontSize: 13, color: '#E2E8F0', outline: 'none', boxSizing: 'border-box' as const,
+                    }}
+                  />
+                  {field.type === 'password' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords(p => ({ ...p, [field.key]: !p[field.key] }))}
+                      style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.35)', display: 'flex' }}
+                    >
+                      {showPasswords[field.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
+            {connected && (
+              <button
+                onClick={() => void handleDisconnect()}
+                style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 500, background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: '#EF4444', cursor: 'pointer' }}
+              >
+                Disconnect
+              </button>
+            )}
+            <button
+              onClick={() => setExpanded(false)}
+              style={{ padding: '8px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 500, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => void handleSave()}
+              disabled={saving}
+              style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 16px', borderRadius: 8, fontSize: 12.5, fontWeight: 600, background: saving ? `${platform.color}30` : `${platform.color}20`, border: `1px solid ${platform.color}50`, color: platform.color, cursor: saving ? 'not-allowed' : 'pointer' }}
+            >
+              {saving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle2 size={13} />}
+              {saving ? 'Saving…' : 'Save & Connect'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ItsmSection() {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <Target size={14} color="#EF4444" />
+        <h2 style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+          ITSM & Ticketing (Pentest)
+        </h2>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16, marginLeft: 22 }}>
+        Connect ticketing platforms to automatically create and sync remediation tickets for pentest findings.
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 12 }}>
+        {ITSM_PLATFORMS_CONFIG.map(platform => (
+          <ItsmPlatformCard key={platform.type} platform={platform} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function IntegrationsPage() {
@@ -734,6 +976,9 @@ export default function IntegrationsPage() {
           No active integrations found. Connect an integration and mark it as active to run scans.
         </div>
       )}
+
+      {/* ── ITSM Integrations ───────────────────────── */}
+      <ItsmSection />
 
       {/* ── Footer note ─────────────────────────────── */}
       <div style={{
