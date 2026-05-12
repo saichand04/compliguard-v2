@@ -1001,14 +1001,38 @@ run_deploy() {
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Pre-flight: confirm pgcrypto's bcrypt support is actually wired up.
--- Errors here mean the postgres image is missing bcrypt and the deploy can't
--- proceed; division-by-zero forces psql (with ON_ERROR_STOP=1) to exit != 0.
 SELECT 1 / CASE
   WHEN crypt('probe', gen_salt('bf', 4)) ~ '^\$2[aby]\$' THEN 1
   ELSE 0
 END AS pgcrypto_bcrypt_check;
 
-INSERT INTO users (id, email, first_name, last_name, password_hash, role, is_active, created_at, updated_at)
+-- Ensure a default organization exists so the admin user has an orgId.
+-- Without this, session.orgId is null and every API route returns 403 Forbidden.
+INSERT INTO organizations (id, name, slug, plan, is_active, created_at, updated_at)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'Default Organization',
+  'default',
+  'enterprise',
+  true,
+  NOW(),
+  NOW()
+)
+ON CONFLICT (id)   DO NOTHING;
+-- also handle slug conflict in case the org already exists with a different id
+INSERT INTO organizations (id, name, slug, plan, is_active, created_at, updated_at)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'Default Organization',
+  'default',
+  'enterprise',
+  true,
+  NOW(),
+  NOW()
+)
+ON CONFLICT (slug) DO UPDATE SET id = '00000000-0000-0000-0000-000000000001', updated_at = NOW();
+
+INSERT INTO users (id, email, first_name, last_name, password_hash, role, organization_id, is_active, created_at, updated_at)
 VALUES (
   gen_random_uuid(),
   :'admin_email',
@@ -1016,24 +1040,24 @@ VALUES (
   'User',
   crypt(:'admin_pw', gen_salt('bf', 12)),
   'super_admin',
+  '00000000-0000-0000-0000-000000000001',
   true,
   NOW(),
   NOW()
 )
 ON CONFLICT (email) DO UPDATE SET
-  password_hash = crypt(:'admin_pw', gen_salt('bf', 12)),
-  role          = 'super_admin',
-  is_active     = true,
-  updated_at    = NOW();
+  password_hash   = crypt(:'admin_pw', gen_salt('bf', 12)),
+  role            = 'super_admin',
+  organization_id = '00000000-0000-0000-0000-000000000001',
+  is_active       = true,
+  updated_at      = NOW();
 
--- Post-condition: must have exactly one matching row with a valid bcrypt hash.
--- The CASE returns 0 (→ division-by-zero) if the stored hash is wrong; that
--- makes psql exit non-zero and the deploy step aborts with the manual-recovery
--- hints printed below.
+-- Post-condition: must have a valid bcrypt hash AND a non-null organization_id.
 SELECT 1 / CASE
-  WHEN password_hash ~ '^\$2[aby]\$' AND length(password_hash) >= 60 THEN 1
+  WHEN password_hash ~ '^\$2[aby]\$' AND length(password_hash) >= 60
+   AND organization_id IS NOT NULL THEN 1
   ELSE 0
-END AS admin_hash_check
+END AS admin_hash_and_org_check
 FROM users WHERE email = :'admin_email';
 PSQL
 
