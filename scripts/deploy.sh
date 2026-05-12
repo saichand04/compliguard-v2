@@ -1008,25 +1008,21 @@ END AS pgcrypto_bcrypt_check;
 
 -- Ensure a default organization exists so the admin user has an orgId.
 -- Without this, session.orgId is null and every API route returns 403 Forbidden.
-INSERT INTO organizations (id, name, slug, plan, is_active, created_at, updated_at)
+INSERT INTO organizations (id, name, slug, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
   'Default Organization',
   'default',
-  'enterprise',
-  true,
   NOW(),
   NOW()
 )
 ON CONFLICT (id)   DO NOTHING;
 -- also handle slug conflict in case the org already exists with a different id
-INSERT INTO organizations (id, name, slug, plan, is_active, created_at, updated_at)
+INSERT INTO organizations (id, name, slug, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
   'Default Organization',
   'default',
-  'enterprise',
-  true,
   NOW(),
   NOW()
 )
