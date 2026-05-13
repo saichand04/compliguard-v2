@@ -196,25 +196,45 @@ function ChatPanel() {
     } finally { setIsStreaming(false) }
   }
 
+  const isEmpty = messages.length === 0
+
   return (
-    <div style={{ display: 'flex', height: '100%', gap: 0, overflow: 'hidden' }}>
-      {/* Conversation history sidebar */}
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+
+      {/* ── Left sidebar ── */}
       <aside style={{
         width: 240, flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: 'rgba(255,255,255,0.02)', borderRight: '1px solid rgba(255,255,255,0.06)',
         overflow: 'hidden',
       }}>
-        <div style={{ padding: '10px 10px 6px' }}>
+        {/* Title block — sits above New Chat */}
+        <div style={{ padding: '18px 14px 12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 14 }}>
+            <div style={{ width: 30, height: 30, background: 'linear-gradient(135deg, #7C3AED, #06B6D4)', borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Bot size={15} color="#fff" />
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.92)', lineHeight: 1.2 }}>CompliGuard AI</div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)' }}>GRC Expert Assistant</div>
+            </div>
+          </div>
           <button onClick={startNewChat} style={{
-            width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
+            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+            padding: '9px 12px',
             background: 'linear-gradient(135deg, #7C3AED 0%, #4F46E5 100%)',
-            border: 'none', borderRadius: 9, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-          }}>
-            <Plus size={13} /> New Chat
+            border: 'none', borderRadius: 9, color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+            transition: 'opacity 0.15s',
+          }}
+            onMouseEnter={e => (e.currentTarget.style.opacity = '0.85')}
+            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+          >
+            <Plus size={14} /> New Chat
           </button>
         </div>
-        <div style={{ padding: '2px 12px 4px', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Recent</div>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 6px' }}>
+
+        {/* Conversation list */}
+        <div style={{ padding: '8px 10px 4px', fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.25)' }}>Recent</div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 8px' }}>
           {loadingConvs ? (
             <div style={{ padding: 12, fontSize: 12, color: 'rgba(255,255,255,0.3)' }}>Loading...</div>
           ) : conversations.length === 0 ? (
@@ -243,33 +263,71 @@ function ChatPanel() {
         </div>
       </aside>
 
-      {/* Chat area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {messages.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: '30px 20px' }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ width: 52, height: 52, background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(6,182,212,0.25))', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 15, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                  <Sparkles size={24} color="#8B5CF6" />
+      {/* ── Right panel ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative' }}>
+
+        {/* Messages area — scrollable, padded so content never hides behind input */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: isEmpty ? '0' : '20px 10%', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* ── Empty state: centered hero + input + suggestions ── */}
+          {isEmpty && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 5%' }}>
+              {/* Hero */}
+              <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                <div style={{ width: 58, height: 58, background: 'linear-gradient(135deg, rgba(124,58,237,0.25), rgba(6,182,212,0.2))', border: '1px solid rgba(139,92,246,0.25)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                  <Sparkles size={26} color="#8B5CF6" />
                 </div>
-                <div style={{ fontSize: 18, fontWeight: 700, color: 'rgba(255,255,255,0.9)', marginBottom: 6 }}>How can I help you today?</div>
-                <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.4)', maxWidth: 380 }}>Ask about compliance posture, control gaps, evidence requirements, or risk findings.</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'rgba(255,255,255,0.92)', marginBottom: 8 }}>How can I help you today?</div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', maxWidth: 400, margin: '0 auto' }}>Ask about compliance posture, control gaps, evidence requirements, or risk findings.</div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 8, width: '100%', maxWidth: 600 }}>
-                {CHAT_PROMPTS.map(p => (
-                  <button key={p.text} onClick={() => sendMessage(p.text)} disabled={isStreaming} style={{
-                    padding: '10px 12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: 9, cursor: 'pointer', textAlign: 'left', fontSize: 12, color: 'rgba(255,255,255,0.7)',
-                  }}
-                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.3)' }}
-                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
-                  >
-                    <span style={{ marginRight: 6 }}>{p.icon}</span>{p.text}
+
+              {/* Floating input — centered */}
+              <div style={{ width: '100%', maxWidth: 680 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'flex-end', gap: 8,
+                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 14, padding: '10px 12px',
+                  boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
+                }}
+                  onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(139,92,246,0.5)')}
+                  onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)')}
+                >
+                  <button style={{ padding: 5, background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.25)', borderRadius: 5, display: 'flex', alignItems: 'center', flexShrink: 0 }} title="Attach file (coming soon)"><Paperclip size={15} /></button>
+                  <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                    placeholder="Ask about compliance, controls, findings…" rows={1}
+                    style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 1.5, resize: 'none', minHeight: 24, maxHeight: 120, fontFamily: 'inherit' }}
+                  />
+                  <button onClick={() => sendMessage()} disabled={!input.trim() || isStreaming} style={{
+                    width: 36, height: 36, background: input.trim() && !isStreaming ? 'linear-gradient(135deg, #7C3AED, #5B21B6)' : 'rgba(255,255,255,0.05)',
+                    border: 'none', borderRadius: 10, cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s',
+                  }}>
+                    <Send size={14} color={input.trim() && !isStreaming ? '#fff' : 'rgba(255,255,255,0.3)'} />
                   </button>
-                ))}
+                </div>
+                <div style={{ textAlign: 'center', fontSize: 10.5, color: 'rgba(255,255,255,0.2)', marginTop: 7 }}>Enter to send · Shift+Enter for new line</div>
+
+                {/* Suggestion cards — below input */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginTop: 18 }}>
+                  {CHAT_PROMPTS.map(p => (
+                    <button key={p.text} onClick={() => sendMessage(p.text)} disabled={isStreaming} style={{
+                      padding: '11px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontSize: 12.5, color: 'rgba(255,255,255,0.7)', lineHeight: 1.4,
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139,92,246,0.1)'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.3)' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)' }}
+                    >
+                      <span style={{ marginRight: 7 }}>{p.icon}</span>{p.text}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          ) : messages.map((msg, i) => (
+          )}
+
+          {/* Messages */}
+          {!isEmpty && messages.map((msg, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', gap: 8, alignItems: 'flex-start' }}>
               {msg.role === 'assistant' && (
                 <div style={{ width: 26, height: 26, background: 'linear-gradient(135deg, #7C3AED, #06B6D4)', borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
@@ -303,28 +361,34 @@ function ChatPanel() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Input */}
-        <div style={{ padding: '10px 14px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 11, padding: '7px 10px' }}
-            onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(139,92,246,0.5)')}
-            onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)')}
-          >
-            <button style={{ padding: 5, background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.25)', borderRadius: 5, display: 'flex', alignItems: 'center', flexShrink: 0 }} title="Attach file (coming soon)"><Paperclip size={14} /></button>
-            <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-              placeholder="Ask about compliance, controls, findings…" rows={1}
-              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 13.5, lineHeight: 1.5, resize: 'none', minHeight: 22, maxHeight: 120, fontFamily: 'inherit' }}
-            />
-            <button onClick={() => sendMessage()} disabled={!input.trim() || isStreaming} style={{
-              width: 32, height: 32, background: input.trim() && !isStreaming ? 'linear-gradient(135deg, #7C3AED, #5B21B6)' : 'rgba(255,255,255,0.05)',
-              border: 'none', borderRadius: 8, cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Send size={13} color={input.trim() && !isStreaming ? '#fff' : 'rgba(255,255,255,0.3)'} />
-            </button>
+        {/* ── Sticky input bar — only shown when conversation is active ── */}
+        {!isEmpty && (
+          <div style={{ padding: '10px 14px 12px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, background: 'var(--bg-primary)' }}>
+            <div style={{
+              display: 'flex', alignItems: 'flex-end', gap: 8,
+              background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: 12, padding: '8px 10px', maxWidth: 860, margin: '0 auto',
+            }}
+              onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(139,92,246,0.5)')}
+              onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)')}
+            >
+              <button style={{ padding: 5, background: 'transparent', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.25)', borderRadius: 5, display: 'flex', alignItems: 'center', flexShrink: 0 }} title="Attach file (coming soon)"><Paperclip size={14} /></button>
+              <textarea ref={textareaRef} value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
+                placeholder="Ask about compliance, controls, findings…" rows={1}
+                style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 13.5, lineHeight: 1.5, resize: 'none', minHeight: 22, maxHeight: 120, fontFamily: 'inherit' }}
+              />
+              <button onClick={() => sendMessage()} disabled={!input.trim() || isStreaming} style={{
+                width: 34, height: 34, background: input.trim() && !isStreaming ? 'linear-gradient(135deg, #7C3AED, #5B21B6)' : 'rgba(255,255,255,0.05)',
+                border: 'none', borderRadius: 9, cursor: input.trim() && !isStreaming ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <Send size={13} color={input.trim() && !isStreaming ? '#fff' : 'rgba(255,255,255,0.3)'} />
+              </button>
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.18)', marginTop: 5 }}>Enter to send · Shift+Enter for new line</div>
           </div>
-          <div style={{ textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.18)', marginTop: 5 }}>Enter to send · Shift+Enter for new line</div>
-        </div>
+        )}
       </div>
     </div>
   )
@@ -494,24 +558,14 @@ export default function AIAssistantPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 56px - 48px)', overflow: 'hidden' }}>
-      {/* Unified header with toggle pill */}
+      {/* Toggle pill header — minimal, pill only */}
       <div style={{
-        display: 'flex', alignItems: 'center', gap: 14,
-        padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '10px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0,
+        gap: 12,
       }}>
-        <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg, #7C3AED 0%, #06B6D4 100%)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Bot size={17} color="#fff" />
-        </div>
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'rgba(255,255,255,0.92)' }}>AI Assistant</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.38)' }}>
-            {mode === 'chat' ? 'Conversational GRC advisor — ask anything' : 'Live data queries with tool transparency'}
-          </div>
-        </div>
-        {/* Toggle pill — right-aligned */}
-        <div style={{ marginLeft: 'auto' }}>
-          <ModePill mode={mode} onChange={setMode} />
-        </div>
+        <ModePill mode={mode} onChange={setMode} />
+
       </div>
 
       {/* Panel — swap on mode change */}
