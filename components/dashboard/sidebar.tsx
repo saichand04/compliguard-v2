@@ -70,10 +70,9 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'AI',
     items: [
-      { href: '/ai-assistant',          label: 'AI Assistant',  icon: Sparkles },
-      { href: '/ai-assistant/nl-query', label: 'NL Query',      icon: MessageSquare },
-      { href: '/context-hub',           label: 'Context Hub',   icon: Brain },
-      { href: '/knowledge',             label: 'Knowledge Base', icon: BookOpen },
+      { href: '/ai-assistant', label: 'AI Assistant', icon: Sparkles },
+      { href: '/context-hub',    label: 'Context Hub',  icon: Brain },
+      { href: '/knowledge',      label: 'Knowledge Base', icon: BookOpen },
     ],
   },
   {

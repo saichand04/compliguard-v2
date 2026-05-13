@@ -1,9 +1,6 @@
-import { NLQueryClient } from './NLQueryClient'
+// Redirect legacy /ai-assistant/nl-query → /ai-assistant (unified page)
+import { redirect } from 'next/navigation'
 
-export const metadata = {
-  title: 'AI GRC Assistant | CompliGuard',
-}
-
-export default function NLQueryPage() {
-  return <NLQueryClient />
+export default function NLQueryRedirect() {
+  redirect('/ai-assistant')
 }
