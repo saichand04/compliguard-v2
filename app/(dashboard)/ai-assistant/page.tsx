@@ -610,25 +610,38 @@ function QueryPanel() {
     } finally { setLoading(false); setTimeout(() => inputRef.current?.focus(), 100) }
   }, [loading, messages])
 
+  const isEmpty = messages.length === 0
+
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
 
-      {/* Left spacer sidebar (matches chat sidebar width for visual alignment) */}
+      {/* ── Left sidebar — mirrors ChatPanel structure exactly ── */}
       <aside style={{
-        width: 248, flexShrink: 0,
+        width: 248, flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: 'transparent',
         borderRight: '1px solid rgba(255,255,255,0.06)',
-        display: 'flex', flexDirection: 'column',
-        padding: '20px 14px',
-        position: 'relative',
         overflow: 'hidden',
+        position: 'relative',
       }}>
-        {/* Sidebar glow */}
-        <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: 120, background: 'rgba(6,182,212,0.05)', filter: 'blur(32px)', pointerEvents: 'none' }} />
+        {/* Sidebar ambient glow */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, width: '100%', height: 120,
+          background: 'rgba(6,182,212,0.06)',
+          filter: 'blur(32px)',
+          pointerEvents: 'none',
+          zIndex: 0,
+        }} />
 
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
-            <div style={{ width: 34, height: 34, background: 'linear-gradient(135deg, #06B6D4, #0891B2)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(6,182,212,0.3)' }}>
+        {/* Title block */}
+        <div style={{ padding: '18px 14px 13px', borderBottom: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+            <div style={{
+              width: 34, height: 34,
+              background: 'linear-gradient(135deg, #06B6D4, #0891B2)',
+              borderRadius: 10,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              boxShadow: '0 4px 12px rgba(6,182,212,0.3)',
+            }}>
               <Database size={16} color="#fff" />
             </div>
             <div>
@@ -636,31 +649,34 @@ function QueryPanel() {
               <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.32)', marginTop: 1 }}>Live GRC data</div>
             </div>
           </div>
+        </div>
 
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.28)', lineHeight: 1.6, marginBottom: 16 }}>
-            Query your live compliance data — frameworks, findings, tasks, and risks — in real-time.
-          </div>
-
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 14 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.22)', marginBottom: 10 }}>Try asking</div>
-            {QUERY_SUGGESTIONS.map(q => (
-              <button key={q} onClick={() => sendQuery(q)} style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '7px 10px', marginBottom: 5,
-                background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.14)',
-                borderRadius: 8, cursor: 'pointer', fontSize: 11.5, color: 'rgba(6,182,212,0.8)', lineHeight: 1.4, transition: 'all 0.15s',
-              }}
-                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.12)'; e.currentTarget.style.borderColor = 'rgba(6,182,212,0.3)' }}
-                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.06)'; e.currentTarget.style.borderColor = 'rgba(6,182,212,0.14)' }}
-              >{q}</button>
-            ))}
-          </div>
+        {/* Suggestions label */}
+        <div style={{ padding: '10px 12px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.22)', position: 'relative', zIndex: 1 }}>Try asking</div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 6px 8px', position: 'relative', zIndex: 1 }}>
+          {QUERY_SUGGESTIONS.map(q => (
+            <button key={q} onClick={() => sendQuery(q)} style={{
+              width: '100%', display: 'flex', alignItems: 'flex-start', gap: 7, padding: '8px 8px',
+              background: 'transparent',
+              border: '1px solid transparent',
+              borderRadius: 8, cursor: 'pointer', textAlign: 'left', marginBottom: 1,
+              fontSize: 12, color: 'rgba(255,255,255,0.65)',
+              lineHeight: 1.4, transition: 'all 0.15s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(6,182,212,0.07)'; e.currentTarget.style.borderColor = 'rgba(6,182,212,0.18)'; e.currentTarget.style.color = 'rgba(255,255,255,0.85)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.65)' }}
+            >
+              <Database size={11} style={{ color: 'rgba(6,182,212,0.6)', flexShrink: 0, marginTop: 2 }} />
+              <span>{q}</span>
+            </button>
+          ))}
         </div>
       </aside>
 
-      {/* Main query area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
+      {/* ── Right main panel — same structure as ChatPanel ── */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative', background: 'transparent' }}>
 
+        {/* AI not configured banner */}
         {aiNotConfigured && (
           <div style={{ margin: '14px 20px 0', padding: '10px 14px', borderRadius: 10, flexShrink: 0, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', display: 'flex', alignItems: 'center', gap: 10 }}>
             <AlertCircle size={13} color="#FBBF24" style={{ flexShrink: 0 }} />
@@ -669,47 +685,181 @@ function QueryPanel() {
           </div>
         )}
 
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 24px 14px' }}>
-          {messages.length === 0 && (
-            <div style={{ paddingTop: 60, textAlign: 'center' }}>
-              <div style={{ width: 58, height: 58, borderRadius: 16, margin: '0 auto 16px', background: 'rgba(6,182,212,0.1)', border: '1px solid rgba(6,182,212,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 28px rgba(6,182,212,0.1)' }}>
-                <Database size={24} color="#06B6D4" />
+        {/* Messages / empty state — identical layout to ChatPanel */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: isEmpty ? '0' : '24px 10%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* ── Empty state — same centering as ChatPanel ── */}
+          {isEmpty && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '0 5%' }}>
+
+              {/* Welcome header */}
+              <div style={{ textAlign: 'center', marginBottom: 36 }}>
+                <div style={{
+                  width: 62, height: 62,
+                  background: 'rgba(6,182,212,0.1)',
+                  border: '1px solid rgba(6,182,212,0.22)',
+                  borderRadius: 18,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 18px',
+                  boxShadow: '0 0 32px rgba(6,182,212,0.12)',
+                }}>
+                  <Database size={27} color="#06B6D4" />
+                </div>
+                <h2 style={{ fontSize: 24, fontWeight: 700, color: 'rgba(255,255,255,0.93)', margin: '0 0 0 0', letterSpacing: '-0.02em' }}>Query your compliance data</h2>
               </div>
-              <h2 style={{ fontSize: 20, fontWeight: 700, color: 'rgba(255,255,255,0.9)', marginBottom: 8, letterSpacing: '-0.01em' }}>Query your live compliance data</h2>
-              <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.38)', maxWidth: 400, margin: '0 auto', lineHeight: 1.7 }}>
-                Ask questions in plain English — I query your frameworks, findings, tasks, and risks in real-time.
-              </p>
+
+              {/* Input box — identical pill shape to ChatPanel */}
+              <div style={{ width: '100%', maxWidth: 700 }}>
+                <div style={{
+                  background: '#151822',
+                  border: '1px solid rgba(255,255,255,0.09)',
+                  borderRadius: 24,
+                  overflow: 'hidden',
+                  boxShadow: '0 4px 32px rgba(0,0,0,0.4)',
+                  transition: 'border-color 0.2s',
+                }}
+                  onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(6,182,212,0.5)')}
+                  onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)')}
+                >
+                  {/* Textarea row */}
+                  <div style={{ padding: '14px 18px 8px' }}>
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={e => setInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(input) } }}
+                      placeholder="Ask anything about your compliance data…"
+                      rows={1} disabled={loading}
+                      style={{
+                        width: '100%', background: 'transparent', border: 'none', outline: 'none',
+                        color: 'rgba(255,255,255,0.9)', fontSize: 14.5, lineHeight: 1.55,
+                        resize: 'none', minHeight: 26, maxHeight: 120, fontFamily: 'inherit',
+                      }}
+                      onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, 120)}px` }}
+                    />
+                  </div>
+                  {/* Action toolbar row — same as ChatPanel */}
+                  <div style={{ display: 'flex', alignItems: 'center', padding: '6px 10px 10px', gap: 6 }}>
+                    <div style={{ flex: 1 }} />
+                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', letterSpacing: '0.01em' }}>↵ to send</span>
+                    <button
+                      onClick={() => sendQuery(input)}
+                      disabled={!input.trim() || loading}
+                      style={{
+                        width: 34, height: 34,
+                        background: input.trim() && !loading
+                          ? 'linear-gradient(135deg, #06B6D4, #0891B2)'
+                          : 'rgba(255,255,255,0.05)',
+                        border: 'none', borderRadius: 10,
+                        cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                        transition: 'all 0.15s',
+                        boxShadow: input.trim() && !loading ? '0 2px 8px rgba(6,182,212,0.35)' : 'none',
+                      }}
+                    >
+                      {loading
+                        ? <Loader2 size={14} color="rgba(255,255,255,0.4)" style={{ animation: 'spin 1s linear infinite' }} />
+                        : <Send size={14} color={input.trim() && !loading ? '#fff' : 'rgba(255,255,255,0.25)'} />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Suggestion chips — same 2-column grid as ChatPanel */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 14 }}>
+                  {QUERY_SUGGESTIONS.map(q => (
+                    <button
+                      key={q}
+                      onClick={() => sendQuery(q)}
+                      disabled={loading}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '11px 14px',
+                        background: 'rgba(255,255,255,0.03)',
+                        border: '1px solid rgba(255,255,255,0.07)',
+                        borderRadius: 12,
+                        cursor: 'pointer', textAlign: 'left',
+                        fontSize: 12.5, color: 'rgba(255,255,255,0.65)',
+                        lineHeight: 1.4, transition: 'all 0.15s',
+                      }}
+                      onMouseEnter={e => {
+                        e.currentTarget.style.background = 'rgba(6,182,212,0.09)'
+                        e.currentTarget.style.borderColor = 'rgba(6,182,212,0.28)'
+                        e.currentTarget.style.color = 'rgba(255,255,255,0.85)'
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.background = 'rgba(255,255,255,0.03)'
+                        e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'
+                        e.currentTarget.style.color = 'rgba(255,255,255,0.65)'
+                      }}
+                    >
+                      <div style={{
+                        width: 28, height: 28,
+                        background: 'rgba(6,182,212,0.12)',
+                        border: '1px solid rgba(6,182,212,0.2)',
+                        borderRadius: 7,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <Database size={13} color="#06B6D4" />
+                      </div>
+                      <span style={{ flex: 1 }}>{q}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
-          {messages.map(msg => {
+          {/* Messages */}
+          {!isEmpty && messages.map((msg, i) => {
             const isUser = msg.role === 'user'; const isError = msg.role === 'error'
             return (
-              <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-end' : 'flex-start', marginBottom: 14 }}>
-                <div style={{ maxWidth: '78%', padding: '11px 15px', borderRadius: isUser ? '14px 14px 4px 14px' : '14px 14px 14px 4px', background: isUser ? 'linear-gradient(135deg, #7C3AED, #4F46E5)' : isError ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.05)', border: isUser ? 'none' : isError ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.07)', color: isUser ? 'white' : isError ? '#EF4444' : 'rgba(255,255,255,0.9)', fontSize: 13.5, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {isError && <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><AlertCircle size={12} /><span style={{ fontSize: 12, fontWeight: 600 }}>Error</span></div>}
-                  {msg.content}
-                </div>
-                {!isUser && !isError && msg.toolsUsed && (
-                  <div style={{ maxWidth: '78%', marginTop: 4 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>{msg.confidence && <ConfidenceBadge confidence={msg.confidence} />}</div>
-                    <ToolCallsSection tools={msg.toolsUsed} />
+              <div key={i} style={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start', gap: 9, alignItems: 'flex-start' }}>
+                {!isUser && (
+                  <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg, #06B6D4, #0891B2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, boxShadow: '0 2px 8px rgba(6,182,212,0.25)' }}>
+                    <Database size={13} color="#fff" />
                   </div>
                 )}
-                {!isUser && !isError && msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
-                  <div style={{ maxWidth: '78%', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {msg.followUpQuestions.map(q => (
-                      <button key={q} onClick={() => sendQuery(q)} style={{ padding: '4px 12px', borderRadius: 100, fontSize: 12, cursor: 'pointer', background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', color: '#06B6D4', fontWeight: 500 }}>{q}</button>
-                    ))}
+                <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: 3, alignItems: isUser ? 'flex-end' : 'flex-start' }}>
+                  <div style={{
+                    padding: isUser ? '10px 15px' : '12px 16px',
+                    background: isUser ? 'linear-gradient(135deg, #7C3AED, #4F46E5)' : isError ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.05)',
+                    border: isUser ? 'none' : isError ? '1px solid rgba(239,68,68,0.2)' : '1px solid rgba(255,255,255,0.08)',
+                    borderRadius: isUser ? '14px 14px 4px 14px' : '4px 14px 14px 14px',
+                    fontSize: 13.5, lineHeight: 1.6, color: isError ? '#EF4444' : 'rgba(255,255,255,0.92)',
+                    boxShadow: isUser ? '0 2px 12px rgba(124,58,237,0.25)' : 'none',
+                    whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                  }}>
+                    {isError && <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}><AlertCircle size={12} /><span style={{ fontSize: 12, fontWeight: 600 }}>Error</span></div>}
+                    {msg.content}
                   </div>
+                  {!isUser && !isError && msg.toolsUsed && (
+                    <div style={{ marginTop: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>{msg.confidence && <ConfidenceBadge confidence={msg.confidence} />}</div>
+                      <ToolCallsSection tools={msg.toolsUsed} />
+                    </div>
+                  )}
+                  {!isUser && !isError && msg.followUpQuestions && msg.followUpQuestions.length > 0 && (
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {msg.followUpQuestions.map(q => (
+                        <button key={q} onClick={() => sendQuery(q)} style={{ padding: '4px 12px', borderRadius: 100, fontSize: 12, cursor: 'pointer', background: 'rgba(6,182,212,0.08)', border: '1px solid rgba(6,182,212,0.2)', color: '#06B6D4', fontWeight: 500 }}>{q}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {isUser && (
+                  <div style={{ width: 28, height: 28, background: 'rgba(124,58,237,0.15)', border: '1px solid rgba(124,58,237,0.25)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, fontSize: 11, color: 'rgba(255,255,255,0.65)', fontWeight: 700 }}>U</div>
                 )}
               </div>
             )
           })}
 
           {loading && (
-            <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 14 }}>
-              <div style={{ padding: '11px 15px', borderRadius: '14px 14px 14px 4px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.07)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9 }}>
+              <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg, #06B6D4, #0891B2)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                <Database size={13} color="#fff" />
+              </div>
+              <div style={{ padding: '12px 16px', borderRadius: '4px 14px 14px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Loader2 size={13} color="#06B6D4" style={{ animation: 'spin 1s linear infinite' }} />
                 <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)' }}>Querying your data...</span>
               </div>
@@ -718,49 +868,54 @@ function QueryPanel() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Query input */}
-        <div style={{ padding: '10px 20px 14px', flexShrink: 0, background: 'transparent', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-          <div style={{
-            background: '#151822', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20,
-            overflow: 'hidden', maxWidth: 860, margin: '0 auto', transition: 'border-color 0.2s',
-          }}
-            onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(6,182,212,0.45)')}
-            onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)')}
-          >
-            <div style={{ padding: '12px 16px 6px' }}>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(input) } }}
-                placeholder="Ask anything about your compliance data…"
-                rows={1} disabled={loading}
-                style={{ width: '100%', resize: 'none', border: 'none', outline: 'none', background: 'transparent', color: 'rgba(255,255,255,0.9)', fontSize: 13.5, lineHeight: 1.6, minHeight: 24, maxHeight: 120, fontFamily: 'inherit' }}
-                onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, 120)}px` }}
-              />
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 8px', gap: 4 }}>
-              <div style={{ flex: 1 }} />
-              <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.18)' }}>↵ to send</span>
-              <button
-                onClick={() => sendQuery(input)}
-                disabled={loading || !input.trim()}
-                style={{
-                  width: 32, height: 32, borderRadius: 9, flexShrink: 0,
-                  background: input.trim() && !loading ? 'linear-gradient(135deg, #06B6D4, #0891B2)' : 'rgba(255,255,255,0.06)',
-                  border: 'none', cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {loading
-                  ? <Loader2 size={14} color="rgba(255,255,255,0.35)" style={{ animation: 'spin 1s linear infinite' }} />
-                  : <Send size={14} color={input.trim() ? 'white' : 'rgba(255,255,255,0.25)'} />}
-              </button>
+        {/* ── Sticky input — only shown during active conversation, same as ChatPanel ── */}
+        {!isEmpty && (
+          <div style={{ padding: '10px 14px 14px', flexShrink: 0, background: 'transparent', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <div style={{
+              background: '#151822',
+              border: '1px solid rgba(255,255,255,0.09)',
+              borderRadius: 20,
+              overflow: 'hidden',
+              maxWidth: 860, margin: '0 auto',
+              transition: 'border-color 0.2s',
+            }}
+              onFocusCapture={e => (e.currentTarget.style.borderColor = 'rgba(6,182,212,0.5)')}
+              onBlurCapture={e => (e.currentTarget.style.borderColor = 'rgba(255,255,255,0.09)')}
+            >
+              <div style={{ padding: '12px 16px 6px' }}>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendQuery(input) } }}
+                  placeholder="Ask anything about your compliance data…"
+                  rows={1} disabled={loading}
+                  style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', color: 'rgba(255,255,255,0.9)', fontSize: 13.5, lineHeight: 1.5, resize: 'none', minHeight: 22, maxHeight: 120, fontFamily: 'inherit' }}
+                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = `${Math.min(t.scrollHeight, 120)}px` }}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', padding: '4px 8px 8px', gap: 4 }}>
+                <div style={{ flex: 1 }} />
+                <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.18)' }}>↵ to send</span>
+                <button
+                  onClick={() => sendQuery(input)}
+                  disabled={loading || !input.trim()}
+                  style={{
+                    width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+                    background: input.trim() && !loading ? 'linear-gradient(135deg, #06B6D4, #0891B2)' : 'rgba(255,255,255,0.05)',
+                    border: 'none', cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {loading
+                    ? <Loader2 size={13} color="rgba(255,255,255,0.35)" style={{ animation: 'spin 1s linear infinite' }} />
+                    : <Send size={13} color={input.trim() ? '#fff' : 'rgba(255,255,255,0.25)'} />}
+                </button>
+              </div>
             </div>
           </div>
-          <p style={{ textAlign: 'center', fontSize: 10.5, color: 'rgba(255,255,255,0.2)', marginTop: 7, marginBottom: 0 }}>AI responses are based on your live compliance data. Always verify critical decisions.</p>
-        </div>
+        )}
       </div>
     </div>
   )
