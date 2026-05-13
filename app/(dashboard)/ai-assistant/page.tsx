@@ -2,10 +2,37 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
-  Send, Plus, Trash2, MessageSquare, Sparkles, Paperclip, Bot,
+  Send, Plus, Trash2, MessageSquare, Sparkles, Paperclip,
   ChevronDown, ChevronUp, Loader2, AlertCircle, Settings, Wrench, Database,
   ShieldCheck, BarChart3, ListTodo, AlertTriangle,
 } from 'lucide-react'
+
+// ─── Circular bot icon (matches purple circle reference) ──────────────────────
+function BotCircleIcon({ size = 34 }: { size?: number }) {
+  const s = size
+  return (
+    <svg width={s} height={s} viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="botGrad" cx="38%" cy="28%" r="75%">
+          <stop offset="0%" stopColor="#9B6DFF" />
+          <stop offset="100%" stopColor="#4F3FBF" />
+        </radialGradient>
+      </defs>
+      <circle cx="20" cy="20" r="20" fill="url(#botGrad)" />
+      {/* Head body */}
+      <rect x="11" y="15" width="18" height="14" rx="4" fill="white" fillOpacity="0.95" />
+      {/* Eyes */}
+      <rect x="14.5" y="19" width="3.5" height="3.5" rx="1.75" fill="url(#botGrad)" />
+      <rect x="22" y="19" width="3.5" height="3.5" rx="1.75" fill="url(#botGrad)" />
+      {/* Antenna */}
+      <rect x="19" y="10" width="2" height="5" rx="1" fill="white" fillOpacity="0.9" />
+      <circle cx="20" cy="9.5" r="1.8" fill="white" fillOpacity="0.9" />
+      {/* Ears */}
+      <rect x="8" y="18" width="3" height="5" rx="1.5" fill="white" fillOpacity="0.8" />
+      <rect x="29" y="18" width="3" height="5" rx="1.5" fill="white" fillOpacity="0.8" />
+    </svg>
+  )
+}
 
 // ─── Shared markdown renderer ────────────────────────────────────────────────
 function renderMarkdown(content: string): string {
@@ -73,7 +100,7 @@ function ModePill({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void 
               letterSpacing: '0.01em',
             }}
           >
-            {m === 'chat' ? <Bot size={12} /> : <Database size={12} />}
+            {m === 'chat' ? <BotCircleIcon size={16} /> : <Database size={12} />}
             {m === 'chat' ? 'AI Chat' : 'Data Query'}
           </button>
         )
@@ -205,7 +232,7 @@ function ChatPanel() {
       {/* ── Left sidebar ── */}
       <aside style={{
         width: 248, flexShrink: 0, display: 'flex', flexDirection: 'column',
-        background: '#0B0C10',
+        background: 'transparent',
         borderRight: '1px solid rgba(255,255,255,0.06)',
         overflow: 'hidden',
         position: 'relative',
@@ -223,13 +250,10 @@ function ChatPanel() {
         <div style={{ padding: '18px 14px 13px', borderBottom: '1px solid rgba(255,255,255,0.05)', position: 'relative', zIndex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
             <div style={{
-              width: 34, height: 34,
-              background: 'linear-gradient(135deg, #7C3AED, #4F46E5)',
-              borderRadius: 10,
+              width: 40, height: 40,
               display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              boxShadow: '0 4px 12px rgba(124,58,237,0.35)',
             }}>
-              <Bot size={16} color="#fff" />
+              <BotCircleIcon size={40} />
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.92)', lineHeight: 1.2 }}>CompliGuard AI</div>
@@ -289,7 +313,7 @@ function ChatPanel() {
       </aside>
 
       {/* ── Right main panel ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative', background: '#090A0F' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, position: 'relative', background: 'transparent' }}>
 
         {/* Messages / empty state area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: isEmpty ? '0' : '24px 10%', display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -424,8 +448,8 @@ function ChatPanel() {
           {!isEmpty && messages.map((msg, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start', gap: 9, alignItems: 'flex-start' }}>
               {msg.role === 'assistant' && (
-                <div style={{ width: 28, height: 28, background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2, boxShadow: '0 2px 8px rgba(124,58,237,0.3)' }}>
-                  <Bot size={13} color="#fff" />
+                <div style={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+                  <BotCircleIcon size={28} />
                 </div>
               )}
               <div style={{ maxWidth: '72%', display: 'flex', flexDirection: 'column', gap: 3, alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
@@ -460,7 +484,7 @@ function ChatPanel() {
 
         {/* ── Sticky input — shown during active conversation ── */}
         {!isEmpty && (
-          <div style={{ padding: '10px 14px 14px', flexShrink: 0, background: '#090A0F', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+          <div style={{ padding: '10px 14px 14px', flexShrink: 0, background: 'transparent', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
             <div style={{
               background: '#151822',
               border: '1px solid rgba(255,255,255,0.09)',
@@ -592,7 +616,7 @@ function QueryPanel() {
       {/* Left spacer sidebar (matches chat sidebar width for visual alignment) */}
       <aside style={{
         width: 248, flexShrink: 0,
-        background: '#0B0C10',
+        background: 'transparent',
         borderRight: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', flexDirection: 'column',
         padding: '20px 14px',
@@ -635,7 +659,7 @@ function QueryPanel() {
       </aside>
 
       {/* Main query area */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#090A0F' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'transparent' }}>
 
         {aiNotConfigured && (
           <div style={{ margin: '14px 20px 0', padding: '10px 14px', borderRadius: 10, flexShrink: 0, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -695,7 +719,7 @@ function QueryPanel() {
         </div>
 
         {/* Query input */}
-        <div style={{ padding: '10px 20px 14px', flexShrink: 0, background: '#090A0F', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ padding: '10px 20px 14px', flexShrink: 0, background: 'transparent', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{
             background: '#151822', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 20,
             overflow: 'hidden', maxWidth: 860, margin: '0 auto', transition: 'border-color 0.2s',
