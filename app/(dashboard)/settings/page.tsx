@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { getSession } from '@/lib/auth/jwt'
 import { ModuleToggles } from '@/components/settings/module-toggles'
+import { MasterResetSection } from '@/components/settings/master-reset'
 
 const SETTINGS_SECTIONS = [
   {
@@ -287,6 +288,9 @@ export default async function SettingsPage() {
           Run Setup Wizard
         </Link>
       </div>
+
+      {/* ── Danger Zone — super_admin only ── */}
+      {session.role === 'super_admin' && <MasterResetSection />}
 
     </div>
   )
