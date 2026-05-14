@@ -941,27 +941,44 @@ run_deploy() {
   # IMPORTANT: Drizzle SQL files embed '--> statement-breakpoint' as an INLINE SUFFIX on the same
   # line as each statement (e.g. 'CREATE TYPE ...;--> statement-breakpoint'). We must strip this
   # suffix globally with 's/--> statement-breakpoint//g' — NOT a line-deletion pattern.
+  #
+  # Two migration folders exist:
+  #   drizzle/migrations/  — main app tables (Drizzle-kit generated, 0000-0004+)
+  #   lib/db/migrations/   — newer module tables (training, knowledge base, teams bot, etc.)
+  # Both must be applied in filename order on every fresh deploy.
   local migration_applied=false
-  for sql_file in "$PROJECT_DIR"/drizzle/migrations/*.sql; do
-    if [[ -f "$sql_file" ]]; then
-      badge info "Applying migration: $(basename "$sql_file")"
-      local mig_output
-      mig_output=$(sed 's/--> statement-breakpoint//g' "$sql_file" | \
-        docker exec -i "$pg_container" psql -U compliguard -d compliguard \
-        --set ON_ERROR_STOP=0 2>&1)
-      local mig_errors
-      mig_errors=$(echo "$mig_output" | grep -iE '^ERROR' | grep -v 'already exists' | head -5 || true)
-      if [[ -n "$mig_errors" ]]; then
-        badge warn "Migration warnings (non-fatal): $mig_errors"
-      else
-        badge ok "Migration applied: $(basename "$sql_file")"
-        migration_applied=true
+  local mig_dirs=()
+  [[ -d "$PROJECT_DIR/drizzle/migrations" ]]  && mig_dirs+=("$PROJECT_DIR/drizzle/migrations")
+  [[ -d "$PROJECT_DIR/lib/db/migrations" ]]   && mig_dirs+=("$PROJECT_DIR/lib/db/migrations")
+
+  for mig_dir in "${mig_dirs[@]}"; do
+    badge info "Scanning migration folder: $mig_dir"
+    local found_any=false
+    for sql_file in "$mig_dir"/*.sql; do
+      if [[ -f "$sql_file" ]]; then
+        found_any=true
+        badge info "Applying migration: $(basename "$sql_file")"
+        local mig_output
+        mig_output=$(sed 's/--> statement-breakpoint//g' "$sql_file" | \
+          docker exec -i "$pg_container" psql -U compliguard -d compliguard \
+          --set ON_ERROR_STOP=0 2>&1)
+        local mig_errors
+        mig_errors=$(echo "$mig_output" | grep -iE '^ERROR' | grep -v 'already exists' | head -5 || true)
+        if [[ -n "$mig_errors" ]]; then
+          badge warn "Migration warnings (non-fatal): $(basename "$sql_file"): $mig_errors"
+        else
+          badge ok "Migration applied: $(basename "$sql_file")"
+          migration_applied=true
+        fi
       fi
+    done
+    if [[ "$found_any" == false ]]; then
+      badge warn "No .sql files found in $mig_dir"
     fi
   done
+
   if [[ "$migration_applied" == false ]]; then
-    badge warn "No .sql migration files found in $PROJECT_DIR/drizzle/migrations/"
-    badge warn "Tables may already exist, or migration files may be missing from the repo."
+    badge warn "No migration files were applied — tables may already exist or files are missing."
   fi
   echo ""
 
