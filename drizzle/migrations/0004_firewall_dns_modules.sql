@@ -3,20 +3,20 @@
 -- dns_audits, dns_issues, dns_evidence, dns_comments, and module_config tables
 
 -- ─── New enums — Firewall Audit ───────────────────────────────────────────────
-CREATE TYPE "firewall_audit_severity" AS ENUM ('info', 'low', 'medium', 'high', 'critical');
+DO $$ BEGIN CREATE TYPE "firewall_audit_severity" AS ENUM ('info', 'low', 'medium', 'high', 'critical'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE "firewall_audit_status" AS ENUM ('open', 'in_progress', 'remediated', 'accepted', 'false_positive');
+DO $$ BEGIN CREATE TYPE "firewall_audit_status" AS ENUM ('open', 'in_progress', 'remediated', 'accepted', 'false_positive'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE "firewall_audit_type" AS ENUM ('perimeter', 'internal', 'cloud', 'waf', 'ngfw', 'other');
+DO $$ BEGIN CREATE TYPE "firewall_audit_type" AS ENUM ('perimeter', 'internal', 'cloud', 'waf', 'ngfw', 'other'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ─── New enums — DNS Audit ────────────────────────────────────────────────────
-CREATE TYPE "dns_audit_severity" AS ENUM ('info', 'low', 'medium', 'high', 'critical');
+DO $$ BEGIN CREATE TYPE "dns_audit_severity" AS ENUM ('info', 'low', 'medium', 'high', 'critical'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE "dns_audit_status" AS ENUM ('open', 'in_progress', 'remediated', 'accepted', 'false_positive');
+DO $$ BEGIN CREATE TYPE "dns_audit_status" AS ENUM ('open', 'in_progress', 'remediated', 'accepted', 'false_positive'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE "dns_audit_type" AS ENUM ('external', 'internal', 'both');
+DO $$ BEGIN CREATE TYPE "dns_audit_type" AS ENUM ('external', 'internal', 'both'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
-CREATE TYPE "dns_issue_type" AS ENUM ('misconfiguration', 'dangling_record', 'missing_spf', 'missing_dmarc', 'missing_dkim', 'zone_transfer', 'subdomain_takeover', 'cache_poisoning', 'wildcard_record', 'other');
+DO $$ BEGIN CREATE TYPE "dns_issue_type" AS ENUM ('misconfiguration', 'dangling_record', 'missing_spf', 'missing_dmarc', 'missing_dkim', 'zone_transfer', 'subdomain_takeover', 'cache_poisoning', 'wildcard_record', 'other'); EXCEPTION WHEN duplicate_object THEN null; END $$;
 
 -- ─── firewall_audits ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS "firewall_audits" (

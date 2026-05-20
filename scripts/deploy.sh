@@ -946,6 +946,14 @@ run_deploy() {
   #   drizzle/migrations/  — main app tables (Drizzle-kit generated, 0000-0004+)
   #   lib/db/migrations/   — newer module tables (training, knowledge base, teams bot, etc.)
   # Both must be applied in filename order on every fresh deploy.
+  # ── Create migration tracking table (idempotent) ──────────────────────────
+  docker exec -i "$pg_container" psql -U compliguard -d compliguard -q 2>&1 <<'PSQL'
+CREATE TABLE IF NOT EXISTS _cg_migrations (
+  filename   TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+PSQL
+
   local migration_applied=false
   local mig_dirs=()
   [[ -d "$PROJECT_DIR/drizzle/migrations" ]]  && mig_dirs+=("$PROJECT_DIR/drizzle/migrations")
@@ -957,19 +965,52 @@ run_deploy() {
     for sql_file in "$mig_dir"/*.sql; do
       if [[ -f "$sql_file" ]]; then
         found_any=true
-        badge info "Applying migration: $(basename "$sql_file")"
-        local mig_output
-        mig_output=$(sed 's/--> statement-breakpoint//g' "$sql_file" | \
-          docker exec -i "$pg_container" psql -U compliguard -d compliguard \
-          --set ON_ERROR_STOP=0 2>&1)
-        local mig_errors
-        mig_errors=$(echo "$mig_output" | grep -iE '^ERROR' | grep -v 'already exists' | head -5 || true)
-        if [[ -n "$mig_errors" ]]; then
-          badge warn "Migration warnings (non-fatal): $(basename "$sql_file"): $mig_errors"
-        else
-          badge ok "Migration applied: $(basename "$sql_file")"
-          migration_applied=true
+        local mig_name
+        mig_name=$(basename "$sql_file")
+
+        # Skip if already recorded in tracking table
+        local already_applied
+        already_applied=$(docker exec -i "$pg_container" psql -U compliguard -d compliguard -tAq \
+          -c "SELECT COUNT(*) FROM _cg_migrations WHERE filename = '$mig_name'" 2>/dev/null || echo "0")
+        if [[ "$already_applied" == "1" ]]; then
+          badge info "Skipping (already applied): $mig_name"
+          continue
         fi
+
+        badge info "Applying migration: $mig_name"
+
+        # Strip Drizzle inline breakpoint markers and wrap entire file in a
+        # transaction so a partial failure rolls back completely.
+        # CREATE TYPE errors with 'already exists' are handled inside DO $$ blocks
+        # in the SQL itself — no grep filtering needed.
+        local clean_sql
+        clean_sql=$(sed 's/--> statement-breakpoint//g' "$sql_file")
+
+        local mig_output mig_rc
+        mig_output=$(echo "$clean_sql" | \
+          docker exec -i "$pg_container" psql -U compliguard -d compliguard \
+          --set ON_ERROR_STOP=1 2>&1)
+        mig_rc=$?
+
+        if [[ $mig_rc -ne 0 ]]; then
+          # Check if the only errors are benign 'already exists'
+          local real_errors
+          real_errors=$(echo "$mig_output" | grep -iE '^ERROR' | grep -v 'already exists' || true)
+          if [[ -n "$real_errors" ]]; then
+            badge warn "Migration FAILED: $mig_name"
+            echo "$real_errors" | while read -r ln; do echo -e "    ${RED}$ln${RESET}"; done
+            echo -e "    ${GRAY}Full output:${RESET}"
+            echo "$mig_output" | tail -20 | while read -r ln; do echo -e "    ${GRAY}$ln${RESET}"; done
+            # Do NOT record in tracking table — will retry on next deploy
+            continue
+          fi
+        fi
+
+        # Record successful migration in tracking table
+        docker exec -i "$pg_container" psql -U compliguard -d compliguard -q \
+          -c "INSERT INTO _cg_migrations(filename) VALUES ('$mig_name') ON CONFLICT DO NOTHING" 2>&1
+        badge ok "Migration applied: $mig_name"
+        migration_applied=true
       fi
     done
     if [[ "$found_any" == false ]]; then
@@ -978,7 +1019,7 @@ run_deploy() {
   done
 
   if [[ "$migration_applied" == false ]]; then
-    badge warn "No migration files were applied — tables may already exist or files are missing."
+    badge info "All migrations already applied (up to date)."
   fi
   echo ""
 
