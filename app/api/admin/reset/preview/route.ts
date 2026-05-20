@@ -41,7 +41,8 @@ export async function GET(req: NextRequest) {
     db.execute(sql`SELECT COUNT(*) FROM knowledge_base_entries WHERE organization_id = ${orgId}`),
   ])
 
-  const count = (r: { rows: unknown[] }) => Number((r.rows[0] as Record<string, unknown>)?.count ?? 0)
+  // Drizzle db.execute() returns the rows array directly (not { rows: [] })
+  const count = (r: unknown[]) => Number((r[0] as Record<string, unknown>)?.count ?? 0)
 
   const categories = [
     { key: 'frameworks',      label: 'Frameworks & Controls',    count: count(frameworks) + count(controls),  icon: 'shield' },
