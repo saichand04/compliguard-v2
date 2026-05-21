@@ -1,5 +1,6 @@
 'use client'
 
+import { ModuleGuard } from '@/components/module-guard'
 import { useState, useEffect, useCallback } from 'react'
 import {
   ShieldOff, Plus, Search, Filter, RefreshCw,
@@ -91,7 +92,7 @@ const selectStyle: React.CSSProperties = {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function FirewallAuditPage() {
+function FirewallAuditPageInner() {
   const [audits, setAudits] = useState<FirewallAudit[]>([])
   const [stats, setStats] = useState<FirewallAuditStats>({ totalFindings: 0, openFindings: 0, remediatedFindings: 0, criticalFindings: 0 })
   const [loading, setLoading] = useState(true)
@@ -345,5 +346,13 @@ export default function FirewallAuditPage() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </div>
+  )
+}
+
+export default function FirewallAuditPage() {
+  return (
+    <ModuleGuard moduleKey="firewallAudit" label="Firewall Audit">
+      <FirewallAuditPageInner />
+    </ModuleGuard>
   )
 }

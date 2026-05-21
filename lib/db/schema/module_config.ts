@@ -23,6 +23,10 @@ export const moduleConfig = pgTable('module_config', {
     teamsBot?: boolean
     training?: boolean
     vendors?: boolean
+    // Cloud Security submodules
+    cloudMicrosoft?: boolean
+    cloudAWS?: boolean
+    cloudGCP?: boolean
   }>().notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -43,6 +47,10 @@ export type ModuleToggles = {
   teamsBot: boolean
   training: boolean
   vendors: boolean
+  // Cloud Security submodules
+  cloudMicrosoft: boolean
+  cloudAWS: boolean
+  cloudGCP: boolean
 }
 
 export const DEFAULT_MODULE_TOGGLES: ModuleToggles = {
@@ -55,4 +63,7 @@ export const DEFAULT_MODULE_TOGGLES: ModuleToggles = {
   teamsBot: true,
   training: true,
   vendors: true,
+  cloudMicrosoft: true,
+  cloudAWS: true,
+  cloudGCP: true,
 }

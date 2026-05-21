@@ -2,7 +2,10 @@ import { getSessionFromRequest } from '@/lib/auth/jwt'
 import { NextRequest, NextResponse } from 'next/server'
 import type { SessionPayload } from '@/lib/auth/jwt'
 import { db } from '@/lib/db'
-import { auditLogs } from '@/lib/db/schema'
+import { auditLogs, moduleConfig } from '@/lib/db/schema'
+import { eq } from 'drizzle-orm'
+import { DEFAULT_MODULE_TOGGLES } from '@/lib/db/schema/module_config'
+import type { ModuleToggles } from '@/lib/db/schema/module_config'
 
 /**
  * Require authenticated session for an API route.
@@ -49,11 +52,40 @@ export async function writeAuditLog(params: {
 }
 
 /**
+ * Check whether a specific module is enabled for the session's org.
+ * Returns true if enabled (or config not found — defaults to enabled).
+ * Call after requireAuth to guard module-specific API routes.
+ *
+ * Usage:
+ *   const session = await requireAuth(req)
+ *   if (!session) return ApiErrors.unauthorized()
+ *   if (!await isModuleEnabled(session.orgId, 'firewallAudit')) return ApiErrors.moduleDisabled()
+ */
+export async function isModuleEnabled(
+  orgId: string | null | undefined,
+  moduleKey: keyof ModuleToggles,
+): Promise<boolean> {
+  if (!orgId) return false
+  try {
+    const [config] = await db
+      .select()
+      .from(moduleConfig)
+      .where(eq(moduleConfig.organizationId, orgId))
+    if (!config) return DEFAULT_MODULE_TOGGLES[moduleKey] ?? true
+    const modules = { ...DEFAULT_MODULE_TOGGLES, ...(config.modules as object) } as ModuleToggles
+    return modules[moduleKey] ?? true
+  } catch {
+    return true // fail-open: don't break app if DB has issues
+  }
+}
+
+/**
  * Standard error responses.
  */
 export const ApiErrors = {
   unauthorized: () => NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
   forbidden: () => NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+  moduleDisabled: () => NextResponse.json({ error: 'This module is disabled for your organization' }, { status: 403 }),
   notFound: (resource = 'Resource') => NextResponse.json({ error: `${resource} not found` }, { status: 404 }),
   badRequest: (message: string) => NextResponse.json({ error: message }, { status: 400 }),
   internal: (message = 'Internal server error') => NextResponse.json({ error: message }, { status: 500 }),

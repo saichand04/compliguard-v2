@@ -1,5 +1,6 @@
 'use client'
 
+import { ModuleGuard } from '@/components/module-guard'
 import { useState, useEffect, useCallback } from 'react'
 import {
   Globe, Plus, Search, Filter, RefreshCw,
@@ -87,7 +88,7 @@ const selectStyle: React.CSSProperties = {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
-export default function DnsAuditPage() {
+function DnsAuditPageInner() {
   const [audits, setAudits] = useState<DnsAudit[]>([])
   const [stats, setStats] = useState<DnsAuditStats>({ totalIssues: 0, openIssues: 0, remediatedIssues: 0, criticalIssues: 0 })
   const [loading, setLoading] = useState(true)
@@ -341,5 +342,13 @@ export default function DnsAuditPage() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
       `}</style>
     </div>
+  )
+}
+
+export default function DnsAuditPage() {
+  return (
+    <ModuleGuard moduleKey="dnsAudit" label="DNS Audit">
+      <DnsAuditPageInner />
+    </ModuleGuard>
   )
 }

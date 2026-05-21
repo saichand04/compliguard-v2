@@ -16,6 +16,10 @@ const moduleToggleSchema = z.object({
   teamsBot: z.boolean().optional(),
   training: z.boolean().optional(),
   vendors: z.boolean().optional(),
+  // Cloud Security submodules
+  cloudMicrosoft: z.boolean().optional(),
+  cloudAWS: z.boolean().optional(),
+  cloudGCP: z.boolean().optional(),
 })
 
 /**
