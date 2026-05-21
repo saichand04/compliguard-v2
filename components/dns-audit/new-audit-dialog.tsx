@@ -36,7 +36,6 @@ const labelStyle: React.CSSProperties = {
 export function NewAuditDialog({ onClose, onSuccess }: NewAuditDialogProps) {
   const [form, setForm] = useState({
     name: '',
-    domain: '',
     auditType: 'external',
     scope: '',
     auditDate: '',
@@ -60,7 +59,6 @@ export function NewAuditDialog({ onClose, onSuccess }: NewAuditDialogProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: form.name.trim(),
-          domain: form.domain.trim() || null,
           auditType: form.auditType,
           scope: form.scope.trim() || null,
           auditDate: form.auditDate || null,
@@ -81,11 +79,8 @@ export function NewAuditDialog({ onClose, onSuccess }: NewAuditDialogProps) {
 
   return (
     <>
-      {/* Backdrop */}
-      <div
-        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, backdropFilter: 'blur(4px)' }}
-        onClick={onClose}
-      />
+      {/* Backdrop — no onClick so accidental outside clicks don't close */}
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, backdropFilter: 'blur(4px)' }} />
 
       {/* Dialog */}
       <div style={{
@@ -134,18 +129,6 @@ export function NewAuditDialog({ onClose, onSuccess }: NewAuditDialogProps) {
                 placeholder="e.g. Q3 2024 External DNS Audit"
                 style={inputStyle}
                 autoFocus
-              />
-            </div>
-
-            {/* Domain */}
-            <div>
-              <label style={labelStyle}>Domain</label>
-              <input
-                type="text"
-                value={form.domain}
-                onChange={e => handleChange('domain', e.target.value)}
-                placeholder="e.g. example.com"
-                style={inputStyle}
               />
             </div>
 

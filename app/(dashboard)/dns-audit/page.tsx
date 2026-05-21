@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react'
 import {
   Globe, Plus, Search, Filter, RefreshCw,
   ChevronRight, Calendar, AlertCircle,
-  CheckCircle2, Activity,
+  CheckCircle2, Activity, Trash2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { NewAuditDialog } from '@/components/dns-audit/new-audit-dialog'
@@ -97,6 +97,8 @@ function DnsAuditPageInner() {
   const [typeFilter, setTypeFilter] = useState('')
   const [showNewAudit, setShowNewAudit] = useState(false)
   const [toastMsg, setToastMsg] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string>('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -127,6 +129,29 @@ function DnsAuditPageInner() {
   }, [search, statusFilter, typeFilter])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Fetch role once on mount for super_admin actions
+  useEffect(() => {
+    fetch('/api/auth/session')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.user?.role) setUserRole(d.user.role) })
+      .catch(() => {})
+  }, [])
+
+  async function handleDelete(id: string, name: string) {
+    if (!confirm(`Delete "${name}" and all its issues? This cannot be undone.`)) return
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/dns-audit/audits/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      showToast('Audit deleted')
+      await loadData()
+    } catch {
+      showToast('Failed to delete audit')
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   function showToast(msg: string) {
     setToastMsg(msg)
@@ -223,8 +248,8 @@ function DnsAuditPageInner() {
       {/* Table */}
       <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, overflow: 'hidden' }}>
         {/* Header */}
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 180px 110px 130px 140px 80px 80px 110px', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 10 }}>
-          {['Name', 'Domain', 'Type', 'Audit Date', 'Status', 'Issues', 'Open', 'Actions'].map((h) => (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 110px 130px 140px 80px 80px 130px', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.06)', gap: 10 }}>
+          {['Name', 'Type', 'Audit Date', 'Status', 'Issues', 'Open', 'Actions'].map((h) => (
             <span key={h} style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
           ))}
         </div>
@@ -256,7 +281,7 @@ function DnsAuditPageInner() {
             <div
               key={audit.id}
               style={{
-                display: 'grid', gridTemplateColumns: '2fr 180px 110px 130px 140px 80px 80px 110px',
+                display: 'grid', gridTemplateColumns: '2fr 110px 130px 140px 80px 80px 130px',
                 padding: '13px 16px', gap: 10, alignItems: 'center',
                 borderBottom: i < audits.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none',
                 cursor: 'pointer', transition: 'background 0.15s',
@@ -268,14 +293,6 @@ function DnsAuditPageInner() {
               <Link href={`/dns-audit/${audit.id}`} style={{ textDecoration: 'none' }}>
                 <div style={{ fontSize: 13.5, fontWeight: 600, color: '#F1F5F9', marginBottom: 2 }}>{audit.name}</div>
               </Link>
-
-              {/* Domain */}
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', display: 'flex', alignItems: 'center', gap: 5, overflow: 'hidden' }}>
-                <Globe size={11} color="rgba(255,255,255,0.3)" />
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {audit.domain ?? '—'}
-                </span>
-              </div>
 
               {/* Type */}
               <div><TypeBadge type={audit.auditType} /></div>
@@ -298,11 +315,11 @@ function DnsAuditPageInner() {
               </div>
 
               {/* Actions */}
-              <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                 <Link
                   href={`/dns-audit/${audit.id}`}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 5,
+                    display: 'flex', alignItems: 'center', gap: 5, lineHeight: 1,
                     padding: '5px 10px', borderRadius: 6, fontSize: 11.5, fontWeight: 500,
                     background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
                     color: '#CBD5E1', textDecoration: 'none',
@@ -310,6 +327,26 @@ function DnsAuditPageInner() {
                 >
                   View <ChevronRight size={11} />
                 </Link>
+                {userRole === 'super_admin' && (
+                  <button
+                    onClick={() => void handleDelete(audit.id, audit.name)}
+                    disabled={deletingId === audit.id}
+                    title="Delete audit"
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      width: 28, height: 28, borderRadius: 6, border: '1px solid rgba(239,68,68,0.25)',
+                      background: 'rgba(239,68,68,0.08)', color: '#EF4444',
+                      cursor: deletingId === audit.id ? 'not-allowed' : 'pointer',
+                      opacity: deletingId === audit.id ? 0.5 : 1,
+                      transition: 'all 0.15s',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.2)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(239,68,68,0.08)' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
               </div>
             </div>
           ))

@@ -89,7 +89,6 @@ export function NewAuditDialog({ onClose, onSuccess }: NewAuditDialogProps) {
       {/* Backdrop */}
       <div
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200, backdropFilter: 'blur(4px)' }}
-        onClick={onClose}
       />
 
       {/* Dialog */}
