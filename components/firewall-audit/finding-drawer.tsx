@@ -18,7 +18,7 @@ interface FirewallFinding {
   ruleId: string | null
   affectedDevice: string | null
   affectedZone: string | null
-  cvssScore: number | null
+  cvssScore: string | null  // stored as varchar in DB
   assignedTo: string | null
   dueDate: string | null
   description: string | null
@@ -360,11 +360,14 @@ export function FindingDrawer({ finding, onClose, onUpdate }: FindingDrawerProps
                     {finding.ruleId ?? <span style={{ color: 'rgba(255,255,255,0.25)' }}>Not specified</span>}
                   </FieldValue>
                   <FieldValue label="CVSS Score">
-                    {finding.cvssScore !== null ? (
-                      <span style={{ fontWeight: 700, color: finding.cvssScore >= 9 ? '#EF4444' : finding.cvssScore >= 7 ? '#F97316' : finding.cvssScore >= 4 ? '#EAB308' : '#10B981' }}>
-                        {finding.cvssScore.toFixed(1)}
-                      </span>
-                    ) : <span style={{ color: 'rgba(255,255,255,0.25)' }}>—</span>}
+                    {(() => {
+                      const n = parseFloat(finding.cvssScore ?? '')
+                      return !isNaN(n) ? (
+                        <span style={{ fontWeight: 700, color: n >= 9 ? '#EF4444' : n >= 7 ? '#F97316' : n >= 4 ? '#EAB308' : '#10B981' }}>
+                          {n.toFixed(1)}
+                        </span>
+                      ) : <span style={{ color: 'rgba(255,255,255,0.25)' }}>—</span>
+                    })()}
                   </FieldValue>
                   <FieldValue label="Affected Device">
                     {finding.affectedDevice ?? <span style={{ color: 'rgba(255,255,255,0.25)' }}>Not specified</span>}

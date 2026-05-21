@@ -32,7 +32,7 @@ interface FirewallFinding {
   ruleId: string | null
   affectedDevice: string | null
   affectedZone: string | null
-  cvssScore: number | null
+  cvssScore: string | null  // stored as varchar in DB
   assignedTo: string | null
   dueDate: string | null
   description: string | null
@@ -385,8 +385,8 @@ export default function FirewallAuditDetailPage() {
                 {[finding.affectedDevice, finding.affectedZone].filter(Boolean).join(' / ') || '—'}
               </div>
 
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: finding.cvssScore !== null ? (finding.cvssScore >= 9 ? '#EF4444' : finding.cvssScore >= 7 ? '#F97316' : finding.cvssScore >= 4 ? '#EAB308' : '#10B981') : 'rgba(255,255,255,0.3)' }}>
-                {finding.cvssScore !== null ? finding.cvssScore.toFixed(1) : '—'}
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: (() => { const n = parseFloat(finding.cvssScore ?? ''); return isNaN(n) ? 'rgba(255,255,255,0.3)' : n >= 9 ? '#EF4444' : n >= 7 ? '#F97316' : n >= 4 ? '#EAB308' : '#10B981' })() }}>
+                {finding.cvssScore ? (isNaN(parseFloat(finding.cvssScore)) ? finding.cvssScore : parseFloat(finding.cvssScore).toFixed(1)) : '—'}
               </div>
 
               <div><StatusBadge status={finding.status} /></div>
